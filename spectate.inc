@@ -370,48 +370,51 @@ public OnPlayerConnect(playerid)
 
 public OnPlayerKeyStateChange(playerid, newkeys, oldkeys)
 {
-	if(GetPlayerSpectateKeys(playerid, SPEC_KEY_NEXT) != SPEC_KEY_INVALID)
+	if(GetPlayerSpectateType(playerid) == SPEC_MODE_PLAYER)
 	{
-		if(	GetPlayerSpectateKeys(playerid, SPEC_KEY_NEXT) != KEY_UP &&
-			GetPlayerSpectateKeys(playerid, SPEC_KEY_NEXT) != KEY_DOWN &&
-			GetPlayerSpectateKeys(playerid, SPEC_KEY_NEXT) != KEY_LEFT &&
-			GetPlayerSpectateKeys(playerid, SPEC_KEY_NEXT) != KEY_RIGHT)
+		if(GetPlayerSpectateKeys(playerid, SPEC_KEY_NEXT) != SPEC_KEY_INVALID)
 		{
-		    if(newkeys == GetPlayerSpectateKeys(playerid, SPEC_KEY_NEXT))
-		    {
-		        UpdatePlayerSpectate(playerid, true);
-		    }
+			if(	GetPlayerSpectateKeys(playerid, SPEC_KEY_NEXT) != KEY_UP &&
+				GetPlayerSpectateKeys(playerid, SPEC_KEY_NEXT) != KEY_DOWN &&
+				GetPlayerSpectateKeys(playerid, SPEC_KEY_NEXT) != KEY_LEFT &&
+				GetPlayerSpectateKeys(playerid, SPEC_KEY_NEXT) != KEY_RIGHT)
+			{
+			    if(newkeys == GetPlayerSpectateKeys(playerid, SPEC_KEY_NEXT))
+			    {
+			        UpdatePlayerSpectate(playerid, true);
+			    }
+			}
+		}
+
+		if(GetPlayerSpectateKeys(playerid, SPEC_KEY_PREVIOUS) != SPEC_KEY_INVALID)
+		{
+			if(	GetPlayerSpectateKeys(playerid, SPEC_KEY_PREVIOUS) != KEY_UP &&
+				GetPlayerSpectateKeys(playerid, SPEC_KEY_PREVIOUS) != KEY_DOWN &&
+				GetPlayerSpectateKeys(playerid, SPEC_KEY_PREVIOUS) != KEY_LEFT &&
+				GetPlayerSpectateKeys(playerid, SPEC_KEY_PREVIOUS) != KEY_RIGHT)
+			{
+			    if(newkeys == GetPlayerSpectateKeys(playerid, SPEC_KEY_NEXT))
+			    {
+			        UpdatePlayerSpectate(playerid, false);
+			    }
+			}
+		}
+
+		if(GetPlayerSpectateKeys(playerid, SPEC_KEY_STOP) != SPEC_KEY_INVALID)
+		{
+			if(	GetPlayerSpectateKeys(playerid, SPEC_KEY_STOP) != KEY_UP &&
+				GetPlayerSpectateKeys(playerid, SPEC_KEY_STOP) != KEY_DOWN &&
+				GetPlayerSpectateKeys(playerid, SPEC_KEY_STOP) != KEY_LEFT &&
+				GetPlayerSpectateKeys(playerid, SPEC_KEY_STOP) != KEY_RIGHT)
+			{
+			    if(newkeys == GetPlayerSpectateKeys(playerid, SPEC_KEY_STOP))
+			    {
+			        TogglePlayerSpectating(playerid, false);
+			    }
+			}
 		}
 	}
-
-	if(GetPlayerSpectateKeys(playerid, SPEC_KEY_PREVIOUS) != SPEC_KEY_INVALID)
-	{
-		if(	GetPlayerSpectateKeys(playerid, SPEC_KEY_PREVIOUS) != KEY_UP &&
-			GetPlayerSpectateKeys(playerid, SPEC_KEY_PREVIOUS) != KEY_DOWN &&
-			GetPlayerSpectateKeys(playerid, SPEC_KEY_PREVIOUS) != KEY_LEFT &&
-			GetPlayerSpectateKeys(playerid, SPEC_KEY_PREVIOUS) != KEY_RIGHT)
-		{
-		    if(newkeys == GetPlayerSpectateKeys(playerid, SPEC_KEY_NEXT))
-		    {
-		        UpdatePlayerSpectate(playerid, false);
-		    }
-		}
-	}
-
-	if(GetPlayerSpectateKeys(playerid, SPEC_KEY_STOP) != SPEC_KEY_INVALID)
-	{
-		if(	GetPlayerSpectateKeys(playerid, SPEC_KEY_STOP) != KEY_UP &&
-			GetPlayerSpectateKeys(playerid, SPEC_KEY_STOP) != KEY_DOWN &&
-			GetPlayerSpectateKeys(playerid, SPEC_KEY_STOP) != KEY_LEFT &&
-			GetPlayerSpectateKeys(playerid, SPEC_KEY_STOP) != KEY_RIGHT)
-		{
-		    if(newkeys == GetPlayerSpectateKeys(playerid, SPEC_KEY_STOP))
-		    {
-		        TogglePlayerSpectating(playerid, false);
-		    }
-		}
-	}
-
+	
 	#if defined SPEC_OnPlayerKeyStateChange
        	return SPEC_OnPlayerKeyStateChange(playerid, newkeys, oldkeys);
 	#else
@@ -430,78 +433,81 @@ public OnPlayerKeyStateChange(playerid, newkeys, oldkeys)
 
 public OnPlayerUpdate(playerid)
 {
-	if(GetPlayerSpectateKeys(playerid, SPEC_KEY_NEXT) != SPEC_KEY_INVALID)
+	if(GetPlayerSpectateType(playerid) == SPEC_MODE_PLAYER)
 	{
-		if(GetPlayerSpectateKeys(playerid, SPEC_KEY_NEXT) == KEY_UP || GetPlayerSpectateKeys(playerid, SPEC_KEY_NEXT) == KEY_DOWN)
+		if(GetPlayerSpectateKeys(playerid, SPEC_KEY_NEXT) != SPEC_KEY_INVALID)
 		{
-			new keys, updown, leftright;
-			GetPlayerKeys(playerid, keys, updown, leftright);
-
-			if(updown & GetPlayerSpectateKeys(playerid, SPEC_KEY_NEXT))
+			if(GetPlayerSpectateKeys(playerid, SPEC_KEY_NEXT) == KEY_UP || GetPlayerSpectateKeys(playerid, SPEC_KEY_NEXT) == KEY_DOWN)
 			{
-				UpdatePlayerSpectate(playerid, true);
+				new keys, updown, leftright;
+				GetPlayerKeys(playerid, keys, updown, leftright);
+
+				if(updown & GetPlayerSpectateKeys(playerid, SPEC_KEY_NEXT))
+				{
+					UpdatePlayerSpectate(playerid, true);
+				}
+			}
+			else if(GetPlayerSpectateKeys(playerid, SPEC_KEY_NEXT) == KEY_LEFT || GetPlayerSpectateKeys(playerid, SPEC_KEY_NEXT) == KEY_RIGHT)
+			{
+				new keys, updown, leftright;
+				GetPlayerKeys(playerid, keys, updown, leftright);
+
+				if(leftright & GetPlayerSpectateKeys(playerid, SPEC_KEY_NEXT))
+				{
+					UpdatePlayerSpectate(playerid, true);
+				}
 			}
 		}
-		else if(GetPlayerSpectateKeys(playerid, SPEC_KEY_NEXT) == KEY_LEFT || GetPlayerSpectateKeys(playerid, SPEC_KEY_NEXT) == KEY_RIGHT)
-		{
-			new keys, updown, leftright;
-			GetPlayerKeys(playerid, keys, updown, leftright);
 
-			if(leftright & GetPlayerSpectateKeys(playerid, SPEC_KEY_NEXT))
+		if(GetPlayerSpectateKeys(playerid, SPEC_KEY_PREVIOUS) != SPEC_KEY_INVALID)
+		{
+			if(GetPlayerSpectateKeys(playerid, SPEC_KEY_PREVIOUS) == KEY_UP || GetPlayerSpectateKeys(playerid, SPEC_KEY_PREVIOUS) == KEY_DOWN)
 			{
-				UpdatePlayerSpectate(playerid, true);
+				new keys, updown, leftright;
+				GetPlayerKeys(playerid, keys, updown, leftright);
+
+				if(updown & GetPlayerSpectateKeys(playerid, SPEC_KEY_PREVIOUS))
+				{
+					UpdatePlayerSpectate(playerid, false);
+				}
+			}
+			else if(GetPlayerSpectateKeys(playerid, SPEC_KEY_PREVIOUS) == KEY_LEFT || GetPlayerSpectateKeys(playerid, SPEC_KEY_PREVIOUS) == KEY_RIGHT)
+			{
+				new keys, updown, leftright;
+				GetPlayerKeys(playerid, keys, updown, leftright);
+
+				if(leftright & GetPlayerSpectateKeys(playerid, SPEC_KEY_PREVIOUS))
+				{
+					UpdatePlayerSpectate(playerid, false);
+				}
+			}
+		}
+
+		if(GetPlayerSpectateKeys(playerid, SPEC_KEY_STOP) != SPEC_KEY_INVALID)
+		{
+			if(GetPlayerSpectateKeys(playerid, SPEC_KEY_STOP) == KEY_UP || GetPlayerSpectateKeys(playerid, SPEC_KEY_STOP) == KEY_DOWN)
+			{
+				new keys, updown, leftright;
+				GetPlayerKeys(playerid, keys, updown, leftright);
+
+				if(updown & GetPlayerSpectateKeys(playerid, SPEC_KEY_STOP))
+				{
+					TogglePlayerSpectating(playerid, false);
+				}
+			}
+			else if(GetPlayerSpectateKeys(playerid, SPEC_KEY_STOP) == KEY_LEFT || GetPlayerSpectateKeys(playerid, SPEC_KEY_STOP) == KEY_RIGHT)
+			{
+				new keys, updown, leftright;
+				GetPlayerKeys(playerid, keys, updown, leftright);
+
+				if(leftright & GetPlayerSpectateKeys(playerid, SPEC_KEY_STOP))
+				{
+					TogglePlayerSpectating(playerid, false);
+				}
 			}
 		}
 	}
-
-	if(GetPlayerSpectateKeys(playerid, SPEC_KEY_PREVIOUS) != SPEC_KEY_INVALID)
-	{
-		if(GetPlayerSpectateKeys(playerid, SPEC_KEY_PREVIOUS) == KEY_UP || GetPlayerSpectateKeys(playerid, SPEC_KEY_PREVIOUS) == KEY_DOWN)
-		{
-			new keys, updown, leftright;
-			GetPlayerKeys(playerid, keys, updown, leftright);
-
-			if(updown & GetPlayerSpectateKeys(playerid, SPEC_KEY_PREVIOUS))
-			{
-				UpdatePlayerSpectate(playerid, false);
-			}
-		}
-		else if(GetPlayerSpectateKeys(playerid, SPEC_KEY_PREVIOUS) == KEY_LEFT || GetPlayerSpectateKeys(playerid, SPEC_KEY_PREVIOUS) == KEY_RIGHT)
-		{
-			new keys, updown, leftright;
-			GetPlayerKeys(playerid, keys, updown, leftright);
-
-			if(leftright & GetPlayerSpectateKeys(playerid, SPEC_KEY_PREVIOUS))
-			{
-				UpdatePlayerSpectate(playerid, false);
-			}
-		}
-	}
-
-	if(GetPlayerSpectateKeys(playerid, SPEC_KEY_STOP) != SPEC_KEY_INVALID)
-	{
-		if(GetPlayerSpectateKeys(playerid, SPEC_KEY_STOP) == KEY_UP || GetPlayerSpectateKeys(playerid, SPEC_KEY_STOP) == KEY_DOWN)
-		{
-			new keys, updown, leftright;
-			GetPlayerKeys(playerid, keys, updown, leftright);
-
-			if(updown & GetPlayerSpectateKeys(playerid, SPEC_KEY_STOP))
-			{
-				TogglePlayerSpectating(playerid, false);
-			}
-		}
-		else if(GetPlayerSpectateKeys(playerid, SPEC_KEY_STOP) == KEY_LEFT || GetPlayerSpectateKeys(playerid, SPEC_KEY_STOP) == KEY_RIGHT)
-		{
-			new keys, updown, leftright;
-			GetPlayerKeys(playerid, keys, updown, leftright);
-
-			if(leftright & GetPlayerSpectateKeys(playerid, SPEC_KEY_STOP))
-			{
-				TogglePlayerSpectating(playerid, false);
-			}
-		}
-	}
-
+	
 	#if ! defined OnPlayerVirtualWorldChange
 	    new worldid = GetPlayerVirtualWorld(playerid);
 	    if(gSpectate[playerid][SPEC_VIRTUAL_WORLD] != worldid)
