@@ -370,7 +370,7 @@ public OnPlayerConnect(playerid)
 
 public OnPlayerKeyStateChange(playerid, newkeys, oldkeys)
 {
-	if(GetPlayerSpectateType(playerid) == SPEC_MODE_PLAYER)
+	if(GetPlayerSpectateType(playerid) == SPEC_TYPE_PLAYER)
 	{
 		if(GetPlayerSpectateKeys(playerid, SPEC_KEY_NEXT) != SPEC_KEY_INVALID)
 		{
@@ -433,7 +433,7 @@ public OnPlayerKeyStateChange(playerid, newkeys, oldkeys)
 
 public OnPlayerUpdate(playerid)
 {
-	if(GetPlayerSpectateType(playerid) == SPEC_MODE_PLAYER)
+	if(GetPlayerSpectateType(playerid) == SPEC_TYPE_PLAYER)
 	{
 		if(GetPlayerSpectateKeys(playerid, SPEC_KEY_NEXT) != SPEC_KEY_INVALID)
 		{
