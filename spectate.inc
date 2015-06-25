@@ -20,7 +20,7 @@ FUNCTIONS:
 native GetPlayerSpectateID(playerid);
 native GetPlayerSpectateType(playerid);
 native GetPlayerSpectateMode(playerid);
-native PlayerSpectatePlayer(playerid, targetplayerid, mode = SPECTATE_MODE_NORMAL);
+native PlayerSpectatePlayer(playerid, targetplayerid, mode = SPECTATE_MODE_NORMAL, bool:state_update = true);
 native PlayerSpectateVehicle(playerid, targetvehicleid, mode = SPECTATE_MODE_NORMAL);
 native TogglePlayerSpectating(playerid, bool:toggle);
 native SetPlayerSpectateKeys(playerid, keytype, key);
@@ -30,6 +30,8 @@ native UpdatePlayerSpectate(playerid, bool:next = true);
 native SetPlayerSpectatePool(playerid, index, id);
 native GetPlayerSpectatePool(playerid, index);
 native ResetPlayerSpectatePool(playerid);
+native ToggleSpectateStateUpdate(playerid, bool:toggle);
+native IsSpectateStateUpdateToggled(playerid);
 
 CALLBACKS:
 public OnPlayerSpecUpdate(playerid, targetplayerid, updatetype, newvalue, oldvalue)
@@ -50,17 +52,27 @@ public OnPlayerSpecUpdate(playerid, targetplayerid, updatetype, newvalue, oldval
 #define SPEC_UPDATE_PREVIOUS    7
 #define SPEC_UPDATE_SPAWN       8
 #define SPEC_UPDATE_CHANGE      9
+#define SPEC_UPDATE_STATE	    10
 
 #define SPEC_KEY_INVALID        -1
 #define SPEC_KEY_NEXT        	0
 #define SPEC_KEY_PREVIOUS       1
 #define SPEC_KEY_STOP        	2
 
-#define SPEC_MAX_POOL_SIZE  	50 //maximum ids in a spectate pool
+#if ! defined SPEC_MAX_POOL_SIZE
+	#define SPEC_MAX_POOL_SIZE  	50 //maximum ids in a spectate pool
+#endif
 
-#define SPEC_LOOP_PLAYERS(%0)   		for(new %0, _%0 = GetPlayerPoolSize(); %0 <= _%0, IsPlayerConnected(%0); %0++)
-#define SPEC_LOOP_PLAYERS_NEXT(%0,%1)   for(new %0 = %1; %0 < MAX_PLAYERS; %0++)
+#define SPEC_LOOP_PLAYERS(%0)   		for(new %0, _%0 = GetPlayerPoolSize(); %0 <= _%0; %0++)
+#define SPEC_LOOP_PLAYERS_NEXT(%0,%1)   for(new %0 = %1, _%0 = GetPlayerPoolSize(); %0 <= _%0; %0++)
 #define SPEC_LOOP_PLAYERS_PREV(%0,%1)   for(new %0 = %1; %0 > -1; %0--)
+
+#if ! defined IsValidVehicle
+	native IsValidVehicle(vehicleid);
+#endif
+
+#define SPEC_LOOP_VEHICLES_NEXT(%0,%1)  for(new %0 = %1, _%0 = GetVehiclePoolSize(); %0 <= _%0; %0++)
+#define SPEC_LOOP_VEHICLES_PREV(%0,%1)  for(new %0 = %1; %0 > -1; %0--)
 
 #if ! defined IsPlayerSpectating
 	stock IsPlayerSpectating(playerid)
@@ -75,6 +87,7 @@ enum SpectateEnum
 	SPEC_ID,
 	SPEC_TYPE,
 	SPEC_MODE,
+	bool:SPEC_STATE_SWITCH,
 	#if ! defined OnPlayerVirtualWorldChange
 		SPEC_VIRTUAL_WORLD,
 	#endif
@@ -100,7 +113,18 @@ stock GetPlayerSpectateMode(playerid)
 	return gSpectate[playerid][SPEC_MODE];
 }
 
-stock SPEC_PlayerSpectatePlayer(playerid, targetplayerid, mode = SPECTATE_MODE_NORMAL)
+stock ToggleSpectateStateUpdate(playerid, bool:toggle)
+{
+    gSpectate[playerid][SPEC_STATE_SWITCH] = toggle;
+	return true;
+}
+
+stock IsSpectateStateUpdateToggled(playerid)
+{
+    return gSpectate[playerid][SPEC_STATE_SWITCH];
+}
+
+stock SPEC_PlayerSpectatePlayer(playerid, targetplayerid, mode = SPECTATE_MODE_NORMAL, bool:state_update = true)
 {
 	if(PlayerSpectatePlayer(playerid, targetplayerid, mode))
 	{
@@ -116,6 +140,16 @@ stock SPEC_PlayerSpectatePlayer(playerid, targetplayerid, mode = SPECTATE_MODE_N
 
 			    SetPlayerInterior(playerid, GetPlayerInterior(targetplayerid));
 			    SetPlayerVirtualWorld(playerid, GetPlayerVirtualWorld(targetplayerid));
+
+                ToggleSpectateStateUpdate(playerid, state_update);
+                
+				if(state_update)
+				{
+				    if(IsPlayerInAnyVehicle(targetplayerid))
+				    {
+				        PlayerSpectateVehicle(playerid, GetPlayerVehicleID(targetplayerid), mode);
+				    }
+				}
 
 				if(! IsPlayerSpectating(playerid))
 				{
@@ -156,12 +190,6 @@ stock SPEC_PlayerSpectatePlayer(playerid, targetplayerid, mode = SPECTATE_MODE_N
 	}
 	return false;
 }
-#if defined _ALS_PlayerSpectatePlayer
-    #undef PlayerSpectatePlayer
-#else
-    #define _ALS_PlayerSpectatePlayer
-#endif
-#define PlayerSpectatePlayer SPEC_PlayerSpectatePlayer
 
 stock SPEC_PlayerSpectateVehicle(playerid, targetvehicleid, mode = SPECTATE_MODE_NORMAL)
 {
@@ -171,27 +199,21 @@ stock SPEC_PlayerSpectateVehicle(playerid, targetvehicleid, mode = SPECTATE_MODE
 		gSpectate[playerid][SPEC_TYPE] = SPEC_TYPE_VEHICLE;
   		gSpectate[playerid][SPEC_MODE] = mode;
 
-		SetPlayerInterior(playerid, GetPlayerInterior(targetplayerid));
-		SetPlayerVirtualWorld(playerid, GetPlayerVirtualWorld(targetplayerid));
+		SetPlayerInterior(playerid, GetPlayerInterior(targetvehicleid));
+		SetPlayerVirtualWorld(playerid, GetPlayerVirtualWorld(targetvehicleid));
 
 		if(! IsPlayerSpectating(playerid))
 		{
-			CallLocalFunction("OnPlayerSpecUpdate", "iiiii", playerid, targetplayerid, SPEC_UPDATE_START, SPEC_TYPE_VEHICLE, SPEC_TYPE_NONE);
+			CallLocalFunction("OnPlayerSpecUpdate", "iiiii", playerid, targetvehicleid, SPEC_UPDATE_START, SPEC_TYPE_VEHICLE, SPEC_TYPE_NONE);
 		}
 		if(GetPlayerSpectateType(playerid) != SPEC_TYPE_VEHICLE)
 		{
-			CallLocalFunction("OnPlayerSpecUpdate", "iiiii", playerid, targetplayerid, SPEC_UPDATE_CHANGE, SPEC_TYPE_VEHICLE, GetPlayerSpectateType(playerid));
+			CallLocalFunction("OnPlayerSpecUpdate", "iiiii", playerid, targetvehicleid, SPEC_UPDATE_CHANGE, SPEC_TYPE_VEHICLE, GetPlayerSpectateType(playerid));
 		}
 		return true;
 	}
 	return false;
 }
-#if defined _ALS_PlayerSpectateVehicle
-    #undef PlayerSpectateVehicle
-#else
-    #define _ALS_PlayerSpectateVehicle
-#endif
-#define PlayerSpectateVehicle SPEC_PlayerSpectateVehicle
 
 stock SPEC_TogglePlayerSpectating(playerid, bool:toggle)
 {
@@ -258,7 +280,7 @@ stock UpdatePlayerSpectate(playerid, bool:next = true)
 						i != playerid)
 			    	{
 			   			CallLocalFunction("OnPlayerSpecUpdate", "iiiii", playerid, i, SPEC_UPDATE_NEXT, i, GetPlayerSpectateID(playerid));
-			    		PlayerSpectatePlayer(playerid, i, GetPlayerSpectateMode(playerid));
+			    		SPEC_PlayerSpectatePlayer(playerid, i, GetPlayerSpectateMode(playerid));
 			    		return true;
 			    	}
 					else if(i < GetPlayerPoolSize())
@@ -270,7 +292,7 @@ stock UpdatePlayerSpectate(playerid, bool:next = true)
 								i != playerid)
 					        {
 				   				CallLocalFunction("OnPlayerSpecUpdate", "iiiii", playerid, p, SPEC_UPDATE_PREVIOUS, p, GetPlayerSpectateID(playerid));
-					            PlayerSpectatePlayer(playerid, p, GetPlayerSpectateMode(playerid));
+					            SPEC_PlayerSpectatePlayer(playerid, p, GetPlayerSpectateMode(playerid));
 					            return true;
 					        }
 					        if(p < 0)
@@ -290,7 +312,7 @@ stock UpdatePlayerSpectate(playerid, bool:next = true)
 						p != playerid)
 					{
 						CallLocalFunction("OnPlayerSpecUpdate", "iiiii", playerid, p, SPEC_UPDATE_PREVIOUS, p, GetPlayerSpectateID(playerid));
-		    			PlayerSpectatePlayer(playerid, p, GetPlayerSpectateMode(playerid));
+		    			SPEC_PlayerSpectatePlayer(playerid, p, GetPlayerSpectateMode(playerid));
 		       			return true;
 					}
 					if(p < 0)
@@ -302,10 +324,69 @@ stock UpdatePlayerSpectate(playerid, bool:next = true)
 								i != playerid)
 					    	{
 					   			CallLocalFunction("OnPlayerSpecUpdate", "iiiii", playerid, i, SPEC_UPDATE_NEXT, i, GetPlayerSpectateID(playerid));
-					    		PlayerSpectatePlayer(playerid, i, GetPlayerSpectateMode(playerid));
+					    		SPEC_PlayerSpectatePlayer(playerid, i, GetPlayerSpectateMode(playerid));
 					    		return true;
 					    	}
 					    	else if(i < GetPlayerPoolSize())
+					    	{
+					    	    return false;
+					    	}
+					    }
+		       		}
+			  	}
+			}
+		}
+		case SPEC_TYPE_VEHICLE:
+	    {
+			if(next)
+			{
+			    SPEC_LOOP_VEHICLES_NEXT(i, (GetPlayerSpectateID(playerid) + 1))
+				{
+					if(IsValidVehicle(i))
+			    	{
+			   			CallLocalFunction("OnPlayerSpecUpdate", "iiiii", playerid, i, SPEC_UPDATE_NEXT, i, GetPlayerSpectateID(playerid));
+			    		PlayerSpectateVehicle(playerid, i, GetPlayerSpectateMode(playerid));
+			    		return true;
+			    	}
+					else if(i < GetVehiclePoolSize())
+					{
+					    SPEC_LOOP_VEHICLES_PREV(p, (GetPlayerSpectateID(playerid) - 1))
+					    {
+					        if(IsValidVehicle(p))
+					        {
+				   				CallLocalFunction("OnPlayerSpecUpdate", "iiiii", playerid, p, SPEC_UPDATE_PREVIOUS, p, GetPlayerSpectateID(playerid));
+					            PlayerSpectateVehicle(playerid, p, GetPlayerSpectateMode(playerid));
+					            return true;
+					        }
+					        if(p < 0)
+					        {
+					            return false;
+					        }
+					    }
+					}
+				}
+			}
+			else
+			{
+			    SPEC_LOOP_VEHICLES_PREV(p, (GetPlayerSpectateID(playerid) - 1))
+				{
+					if(IsValidVehicle(p))
+					{
+						CallLocalFunction("OnPlayerSpecUpdate", "iiiii", playerid, p, SPEC_UPDATE_PREVIOUS, p, GetPlayerSpectateID(playerid));
+		    			PlayerSpectateVehicle(playerid, p, GetPlayerSpectateMode(playerid));
+		       			return true;
+					}
+					if(p < 0)
+					{
+		   				SPEC_LOOP_VEHICLES_NEXT(i, (GetPlayerSpectateID(playerid) + 1))
+						{
+							if(IsValidVehicle(i))
+					    	{
+					   			CallLocalFunction("OnPlayerSpecUpdate", "iiiii", playerid, i, SPEC_UPDATE_NEXT, i, GetPlayerSpectateID(playerid));
+					    		PlayerSpectateVehicle(playerid, i, GetPlayerSpectateMode(playerid));
+					    		return true;
+					    	}
+					    	else if(i < GetVehiclePoolSize())
 					    	{
 					    	    return false;
 					    	}
@@ -339,6 +420,73 @@ stock ResetPlayerSpectatePool(playerid)
 	return true;
 }
 
+public OnVehicleDeath(vehicleid, killerid)
+{
+    new Float:fpos[3];
+	GetVehiclePos(vehicleid, fpos[0], fpos[1], fpos[2]);
+
+	SPEC_LOOP_PLAYERS(i)
+	{
+		if(	IsPlayerConnected(i) &&
+			IsPlayerSpectating(i) &&
+			GetPlayerSpectateID(i) == vehicleid &&
+			GetPlayerSpectateMode(i) == SPEC_TYPE_VEHICLE)
+ 		{
+ 		    fpos[2] += 5.0;
+			SetPlayerCameraPos(i, fpos[0], fpos[1], fpos[2]);
+			SetPlayerCameraLookAt(i, fpos[0], fpos[1], fpos[2]);
+			
+	        CallLocalFunction("OnPlayerSpecUpdate", "iiiii", i, vehicleid, SPEC_UPDATE_DEATH, killerid, -1);
+		}
+  	}
+
+	#if defined SPEC_OnVehicleDestory
+       	return SPEC_OnVehicleDestory(vehicleid, killerid);
+	#else
+	   	return 1;
+	#endif
+}
+#if defined _ALS_OnVehicleDestory
+    #undef OnVehicleDestory
+#else
+    #define _ALS_OnVehicleDestory
+#endif
+#define OnVehicleDestory SPEC_OnVehicleDestory
+#if defined SPEC_OnVehicleDestory
+    forward SPEC_OnVehicleDestory(vehicleid, killerid);
+#endif
+
+public OnVehicleSpawn(vehicleid)
+{
+	SPEC_LOOP_PLAYERS(i)
+	{
+		if(	IsPlayerConnected(i) &&
+			IsPlayerSpectating(i) &&
+			GetPlayerSpectateID(i) == vehicleid &&
+			GetPlayerSpectateMode(i) == SPEC_TYPE_VEHICLE)
+ 		{
+			SPEC_PlayerSpectateVehicle(i, vehicleid, GetPlayerSpectateMode(i));
+
+            CallLocalFunction("OnPlayerSpecUpdate", "iiiii", i, vehicleid, SPEC_UPDATE_SPAWN, -1, -1);
+ 		}
+ 	}
+
+	#if defined SPEC_OnVehicleSpawn
+       	return SPEC_OnVehicleSpawn(vehicleid);
+	#else
+	   	return 1;
+	#endif
+}
+#if defined _ALS_OnVehicleRespawn
+    #undef OnVehicleRespawn
+#else
+    #define _ALS_OnVehicleRespawn
+#endif
+#define OnVehicleRespawn SPEC_OnVehicleSpawn
+#if defined SPEC_OnVehicleSpawn
+    forward SPEC_OnVehicleSpawn(vehicleid);
+#endif
+
 public OnPlayerConnect(playerid)
 {
 	gSpectate[playerid][SPEC_ID] = INVALID_PLAYER_ID;
@@ -366,6 +514,46 @@ public OnPlayerConnect(playerid)
 #define OnPlayerConnect SPEC_OnPlayerConnect
 #if defined SPEC_OnPlayerConnect
     forward SPEC_OnPlayerConnect(playerid);
+#endif
+
+public OnPlayerStateChange(playerid, newstate, oldstate)
+{
+	SPEC_LOOP_PLAYERS(i)
+	{
+		if(	IsPlayerConnected(i) &&
+			IsPlayerSpectating(i) &&
+			GetPlayerSpectateID(i) == playerid &&
+			GetPlayerSpectateMode(i) == SPEC_TYPE_PLAYER)
+ 		{
+   			if(IsSpectateStateUpdateToggled(i))
+			{
+   				if(IsPlayerInAnyVehicle(playerid))
+				{
+					PlayerSpectateVehicle(i, GetPlayerVehicleID(playerid), GetPlayerSpectateType(i));
+				}
+				else
+				{
+					SPEC_PlayerSpectatePlayer(i, playerid, GetPlayerSpectateType(i));
+				}
+			}
+	        CallLocalFunction("OnPlayerSpecUpdate", "iiiii", i, playerid, SPEC_UPDATE_STATE, newstate, oldstate);
+		}
+  	}
+
+	#if defined SPEC_OnPlayerStateChange
+       	return SPEC_OnPlayerStateChange(playerid, newstate, oldstate);
+	#else
+	   	return 1;
+	#endif
+}
+#if defined _ALS_OnPlayerStateChange
+    #undef OnPlayerStateChange
+#else
+    #define _ALS_OnPlayerStateChange
+#endif
+#define OnPlayerStateChange SPEC_OnPlayerStateChange
+#if defined SPEC_OnPlayerStateChange
+    forward SPEC_OnPlayerStateChange(playerid, newstate, oldstate);
 #endif
 
 public OnPlayerKeyStateChange(playerid, newkeys, oldkeys)
@@ -414,7 +602,7 @@ public OnPlayerKeyStateChange(playerid, newkeys, oldkeys)
 			}
 		}
 	}
-	
+
 	#if defined SPEC_OnPlayerKeyStateChange
        	return SPEC_OnPlayerKeyStateChange(playerid, newkeys, oldkeys);
 	#else
@@ -507,7 +695,7 @@ public OnPlayerUpdate(playerid)
 			}
 		}
 	}
-	
+
 	#if ! defined OnPlayerVirtualWorldChange
 	    new worldid = GetPlayerVirtualWorld(playerid);
 	    if(gSpectate[playerid][SPEC_VIRTUAL_WORLD] != worldid)
@@ -537,10 +725,11 @@ public OnPlayerSpawn(playerid)
 {
 	SPEC_LOOP_PLAYERS(i)
 	{
-        if(	GetPlayerSpectateID(i) == playerid &&
+        if(	IsPlayerConnected(i) &&
+			GetPlayerSpectateID(i) == playerid &&
 			GetPlayerSpectateMode(i) == SPEC_TYPE_PLAYER)
 		{
-			PlayerSpectatePlayer(i, playerid, GetPlayerSpectateMode(i));
+			SPEC_PlayerSpectatePlayer(i, playerid, GetPlayerSpectateMode(i));
 
             CallLocalFunction("OnPlayerSpecUpdate", "iiiii", i, playerid, SPEC_UPDATE_SPAWN, -1, -1);
         }
@@ -568,7 +757,8 @@ public OnPlayerSpawn(playerid)
 	{
 	    SPEC_LOOP_PLAYERS(i)
 	 	{
-	        if(	GetPlayerSpectateID(i) == playerid &&
+	        if(	IsPlayerConnected(i) &&
+				GetPlayerSpectateID(i) == playerid &&
 				GetPlayerSpectateMode(i) == SPEC_TYPE_PLAYER)
 	        {
 	            SetPlayerVirtualWorld(i, neworld);
@@ -584,7 +774,8 @@ public OnPlayerSpawn(playerid)
 	    new worldid = GetPlayerSpectateID(playerid);
 	    SPEC_LOOP_PLAYERS(i)
 	    {
-	        if(	GetPlayerSpectateID(i) == playerid &&
+	        if(	IsPlayerConnected(i) &&
+				GetPlayerSpectateID(i) == playerid &&
 				GetPlayerSpectateMode(i) == SPEC_TYPE_PLAYER)
 	        {
 	            SetPlayerVirtualWorld(i, worldid);
@@ -614,7 +805,8 @@ public OnPlayerInteriorChange(playerid, newinteriorid, oldinteriorid)
 {
 	SPEC_LOOP_PLAYERS(i)
 	{
-        if(	GetPlayerSpectateID(i) == playerid &&
+        if(	IsPlayerConnected(i) &&
+			GetPlayerSpectateID(i) == playerid &&
 			GetPlayerSpectateMode(i) == SPEC_TYPE_PLAYER)
 		{
 			SetPlayerVirtualWorld(i, newinteriorid);
@@ -649,7 +841,8 @@ public OnPlayerDeath(playerid, killerid, reason)
 
 	SPEC_LOOP_PLAYERS(i)
 	{
-        if(	GetPlayerSpectateID(i) == playerid &&
+        if(	IsPlayerConnected(i) &&
+			GetPlayerSpectateID(i) == playerid &&
 			GetPlayerSpectateMode(i) == SPEC_TYPE_PLAYER)
 		{
 			if(! GetPlayerInterior(i))
@@ -689,7 +882,8 @@ public OnPlayerDisconnect(playerid, reason)
 
 	SPEC_LOOP_PLAYERS(i)
 	{
-        if(	GetPlayerSpectateID(i) == playerid &&
+        if(	IsPlayerConnected(i) &&
+			GetPlayerSpectateID(i) == playerid &&
 			GetPlayerSpectateMode(i) == SPEC_TYPE_PLAYER)
 		{
 			if(! GetPlayerInterior(i))
@@ -721,6 +915,26 @@ public OnPlayerDisconnect(playerid, reason)
 
 forward OnPlayerSpecUpdate(playerid, targetplayerid, updatetype, newvalue, oldvalue);
 
+//Hook PlayerSpectatePlayer
+#if defined _ALS_PlayerSpectatePlayer
+    #undef PlayerSpectatePlayer
+#else
+    #define _ALS_PlayerSpectatePlayer
+#endif
+#define PlayerSpectatePlayer SPEC_PlayerSpectatePlayer
+//
+
+//Hook PlayerSpectateVehicle
+#if defined _ALS_PlayerSpectateVehicle
+    #undef PlayerSpectateVehicle
+#else
+    #define _ALS_PlayerSpectateVehicle
+#endif
+#define PlayerSpectateVehicle SPEC_PlayerSpectateVehicle
+//
+
 #undef SPEC_LOOP_PLAYERS
 #undef SPEC_LOOP_PLAYERS_NEXT
 #undef SPEC_LOOP_PLAYERS_PREV
+#undef SPEC_LOOP_VEHICLES_NEXT
+#undef SPEC_LOOP_VEHICLES_PREV
