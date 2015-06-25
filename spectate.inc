@@ -142,7 +142,7 @@ stock SPEC_PlayerSpectatePlayer(playerid, targetplayerid, mode = SPECTATE_MODE_N
 			    SetPlayerVirtualWorld(playerid, GetPlayerVirtualWorld(targetplayerid));
 
                 ToggleSpectateStateUpdate(playerid, state_update);
-                
+
 				if(state_update)
 				{
 				    if(IsPlayerInAnyVehicle(targetplayerid))
@@ -435,25 +435,25 @@ public OnVehicleDeath(vehicleid, killerid)
  		    fpos[2] += 5.0;
 			SetPlayerCameraPos(i, fpos[0], fpos[1], fpos[2]);
 			SetPlayerCameraLookAt(i, fpos[0], fpos[1], fpos[2]);
-			
+
 	        CallLocalFunction("OnPlayerSpecUpdate", "iiiii", i, vehicleid, SPEC_UPDATE_DEATH, killerid, -1);
 		}
   	}
 
-	#if defined SPEC_OnVehicleDestory
-       	return SPEC_OnVehicleDestory(vehicleid, killerid);
+	#if defined SPEC_OnVehicleDeath
+       	return SPEC_OnVehicleDeath(vehicleid, killerid);
 	#else
 	   	return 1;
 	#endif
 }
-#if defined _ALS_OnVehicleDestory
-    #undef OnVehicleDestory
+#if defined _ALS_OnVehicleDeath
+    #undef OnVehicleDeath
 #else
-    #define _ALS_OnVehicleDestory
+    #define _ALS_OnVehicleDeath
 #endif
-#define OnVehicleDestory SPEC_OnVehicleDestory
-#if defined SPEC_OnVehicleDestory
-    forward SPEC_OnVehicleDestory(vehicleid, killerid);
+#define OnVehicleDeath SPEC_OnVehicleDeath
+#if defined SPEC_OnVehicleDeath
+    forward SPEC_OnVehicleDeath(vehicleid, killerid);
 #endif
 
 public OnVehicleSpawn(vehicleid)
@@ -477,12 +477,12 @@ public OnVehicleSpawn(vehicleid)
 	   	return 1;
 	#endif
 }
-#if defined _ALS_OnVehicleRespawn
-    #undef OnVehicleRespawn
+#if defined _ALS_OnVehicleSpawn
+    #undef OnVehicleSpawn
 #else
-    #define _ALS_OnVehicleRespawn
+    #define _ALS_OnVehicleSpawn
 #endif
-#define OnVehicleRespawn SPEC_OnVehicleSpawn
+#define OnVehicleSpawn SPEC_OnVehicleSpawn
 #if defined SPEC_OnVehicleSpawn
     forward SPEC_OnVehicleSpawn(vehicleid);
 #endif
