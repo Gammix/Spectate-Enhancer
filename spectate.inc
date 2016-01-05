@@ -1,230 +1,158 @@
+#include <a_samp>
+
+#if defined _spectate_included
+	#endinput
+#endif
+#define _spectate_included
+
+#include <SAMP_Fixer/fix_vehicles>
+#include <foreach>
+
 /*
-	Spectate Include (spectate.inc)
-	* An advance spectate system for SAMP.
-	* Camera freezer, now don't show the ugly sea view camera. Freeze the camera when the player is lost (died or spawned)
-	* Advance spectate pooling techique to easily manage limited spectating
-	* Crash free, bug free and safe!
-	* Auto redirecting so no need to repeat code
-	* Auto adjustments, adjust interior and virtual world automatically
-	* New callbacks to handle spectating!
-
- 	Author: (creator)
-	* Gammix
-
-	(c) Copyright 2015
-  	* This file is provided as is (no warranties).
+* [Include] Spectate enhancer (spectate.inc)
+* An advance spectate system include with camera freezer, crash free, bug free, auto redirecting, auto adjustments and supports callbacks.
+*
+* By Gammix - (c) Copyright 2015
+* This file is provided as is (no warranties).
 */
 
 /*
 FUNCTIONS:
-native GetPlayerSpectateID(playerid);
-native GetPlayerSpectateType(playerid);
-native GetPlayerSpectateMode(playerid);
-native PlayerSpectatePlayer(playerid, targetplayerid, mode = SPECTATE_MODE_NORMAL, bool:state_update = true);
-native PlayerSpectateVehicle(playerid, targetvehicleid, mode = SPECTATE_MODE_NORMAL);
-native TogglePlayerSpectating(playerid, bool:toggle);
-native SetPlayerSpectateKeys(playerid, keytype, key);
-native GetPlayerSpectateKeys(playerid, keytype);
-native IsPlayerSpectating(playerid);
-native UpdatePlayerSpectate(playerid, bool:next = true);
-native SetPlayerSpectatePool(playerid, index, id);
-native GetPlayerSpectatePool(playerid, index);
-native ResetPlayerSpectatePool(playerid);
-native ToggleSpectateStateUpdate(playerid, bool:toggle);
-native IsSpectateStateUpdateToggled(playerid);
-
-CALLBACKS:
-public OnPlayerSpecUpdate(playerid, targetplayerid, updatetype, newvalue, oldvalue)
+native GetPlayerSpectateData(playerid, &spectatetype, &targetid, &mode);
+native UpdatePlayerSpectate(playerid, bool:advance = true);
 */
 
-#define SPEC_TYPE_NONE      	0
-#define SPEC_TYPE_PLAYER    	1
-#define SPEC_TYPE_VEHICLE   	2
-#define SPEC_TYPE_FREECAM   	3
+#if ! defined Vehicle
+	new Iterator:Vehicle<MAX_VEHICLES>;
 
-#define SPEC_UPDATE_WORLDID     0
-#define SPEC_UPDATE_INTERIORID  1
-#define SPEC_UPDATE_DEATH       2
-#define SPEC_UPDATE_DISCONNECT  3
-#define SPEC_UPDATE_START       4
-#define SPEC_UPDATE_STOP        5
-#define SPEC_UPDATE_NEXT    	6
-#define SPEC_UPDATE_PREVIOUS    7
-#define SPEC_UPDATE_SPAWN       8
-#define SPEC_UPDATE_CHANGE      9
-#define SPEC_UPDATE_STATE	    10
-
-#define SPEC_KEY_INVALID        -1
-#define SPEC_KEY_NEXT        	0
-#define SPEC_KEY_PREVIOUS       1
-#define SPEC_KEY_STOP        	2
-
-#if ! defined SPEC_MAX_POOL_SIZE
-	#define SPEC_MAX_POOL_SIZE  	50 //maximum ids in a spectate pool
-#endif
-
-#define SPEC_LOOP_PLAYERS(%0)   		for(new %0, _%0 = GetPlayerPoolSize(); %0 <= _%0; %0++)
-#define SPEC_LOOP_PLAYERS_NEXT(%0,%1)   for(new %0 = %1, _%0 = GetPlayerPoolSize(); %0 <= _%0; %0++)
-#define SPEC_LOOP_PLAYERS_PREV(%0,%1)   for(new %0 = %1; %0 > -1; %0--)
-
-#if ! defined IsValidVehicle
-	native IsValidVehicle(vehicleid);
-#endif
-
-#define SPEC_LOOP_VEHICLES_NEXT(%0,%1)  for(new %0 = %1, _%0 = GetVehiclePoolSize(); %0 <= _%0; %0++)
-#define SPEC_LOOP_VEHICLES_PREV(%0,%1)  for(new %0 = %1; %0 > -1; %0--)
-
-#if ! defined IsPlayerSpectating
-	stock IsPlayerSpectating(playerid)
+	stock Spec_CreateVehicle(modelid, Float:spawn_x, Float:spawn_y, Float:spawn_z, Float:z_angle, color1, color2, respawn_delay)
 	{
-	    if(GetPlayerState(playerid) == PLAYER_STATE_SPECTATING) return true;
-	    return false;
+ 		new ret = CreateVehicle(modelid, spawn_x, spawn_y, spawn_z, z_angle, color1, color2, respawn_delay);
+	    Iter_Add(Vehicle, ret);
+     	return ret;
 	}
-#endif
-
-enum SpectateEnum
-{
-	SPEC_ID,
-	SPEC_TYPE,
-	SPEC_MODE,
-	bool:SPEC_STATE_SWITCH,
-	#if ! defined OnPlayerVirtualWorldChange
-		SPEC_VIRTUAL_WORLD,
+	#if defined _ALS_CreateVehicle
+ 		#undef CreateVehicle
+	#else
+ 		#define _ALS_CreateVehicle
 	#endif
-	SPEC_POOL[SPEC_MAX_POOL_SIZE],
-	SPEC_KEY_SET_NEXT,
-	SPEC_KEY_SET_PREVIOUS,
-	SPEC_KEY_SET_STOP
-};
-static gSpectate[MAX_PLAYERS][SpectateEnum];
+	#define CreateVehicle Spec_CreateVehicle
 
-stock GetPlayerSpectateID(playerid)
-{
-	return gSpectate[playerid][SPEC_ID];
-}
-
-stock GetPlayerSpectateType(playerid)
-{
-	return gSpectate[playerid][SPEC_TYPE];
-}
-
-stock GetPlayerSpectateMode(playerid)
-{
-	return gSpectate[playerid][SPEC_MODE];
-}
-
-stock ToggleSpectateStateUpdate(playerid, bool:toggle)
-{
-    gSpectate[playerid][SPEC_STATE_SWITCH] = toggle;
-	return true;
-}
-
-stock IsSpectateStateUpdateToggled(playerid)
-{
-    return gSpectate[playerid][SPEC_STATE_SWITCH];
-}
-
-stock SPEC_PlayerSpectatePlayer(playerid, targetplayerid, mode = SPECTATE_MODE_NORMAL, bool:state_update = true)
-{
-	if(PlayerSpectatePlayer(playerid, targetplayerid, mode))
+	stock Spec_AddStaticVehicle(modelid, Float:spawn_x, Float:spawn_y, Float:spawn_z, Float:z_angle, color1, color2)
 	{
-	    new empty_counts = 0;
-	    for(new i; i < SPEC_MAX_POOL_SIZE; i++)
-	    {
-	        if(	GetPlayerSpectatePool(playerid, i) == targetplayerid &&
-				GetPlayerSpectatePool(playerid, i) != -1)
-	        {
-	            gSpectate[playerid][SPEC_ID] = targetplayerid;
-			    gSpectate[playerid][SPEC_TYPE] = SPEC_TYPE_PLAYER;
-			    gSpectate[playerid][SPEC_MODE] = mode;
-
-			    SetPlayerInterior(playerid, GetPlayerInterior(targetplayerid));
-			    SetPlayerVirtualWorld(playerid, GetPlayerVirtualWorld(targetplayerid));
-
-                ToggleSpectateStateUpdate(playerid, state_update);
-
-				if(state_update)
-				{
-				    if(IsPlayerInAnyVehicle(targetplayerid))
-				    {
-				        PlayerSpectateVehicle(playerid, GetPlayerVehicleID(targetplayerid), mode);
-				    }
-				}
-
-				if(! IsPlayerSpectating(playerid))
-				{
-					CallLocalFunction("OnPlayerSpecUpdate", "iiiii", playerid, targetplayerid, SPEC_UPDATE_START, SPEC_TYPE_PLAYER, SPEC_TYPE_NONE);
-				}
-				else if(GetPlayerSpectateType(playerid) != SPEC_TYPE_PLAYER)
-				{
-					CallLocalFunction("OnPlayerSpecUpdate", "iiiii", playerid, targetplayerid, SPEC_UPDATE_CHANGE, SPEC_TYPE_PLAYER, GetPlayerSpectateType(playerid));
-				}
-				return true;
-	        }
-	        else if(GetPlayerSpectatePool(playerid, i) == -1)
-	        {
-	            empty_counts += 1;
-	        }
-	    }
-		if(empty_counts >= SPEC_MAX_POOL_SIZE)
-		{
-		    gSpectate[playerid][SPEC_ID] = targetplayerid;
-		    gSpectate[playerid][SPEC_TYPE] = SPEC_TYPE_PLAYER;
-			gSpectate[playerid][SPEC_MODE] = mode;
-
-		    SetPlayerInterior(playerid, GetPlayerInterior(targetplayerid));
-		    SetPlayerVirtualWorld(playerid, GetPlayerVirtualWorld(targetplayerid));
-
-			if(! IsPlayerSpectating(playerid))
-			{
-				CallLocalFunction("OnPlayerSpecUpdate", "iiiii", playerid, targetplayerid, SPEC_UPDATE_START, SPEC_TYPE_PLAYER, SPEC_TYPE_NONE);
-			}
-			else if(GetPlayerSpectateType(playerid) != SPEC_TYPE_PLAYER)
-			{
-				CallLocalFunction("OnPlayerSpecUpdate", "iiiii", playerid, targetplayerid, SPEC_UPDATE_CHANGE, SPEC_TYPE_PLAYER, GetPlayerSpectateType(playerid));
-			}
-			return true;
-		}
-
-	    return UpdatePlayerSpectate(playerid, true);
+ 		new ret = AddStaticVehicle(modelid, spawn_x, spawn_y, spawn_z, z_angle, color1, color2);
+	    Iter_Add(Vehicle, ret);
+     	return ret;
 	}
+	#if defined _ALS_AddStaticVehicle
+ 		#undef AddStaticVehicle
+	#else
+	    #define _ALS_AddStaticVehicle
+	#endif
+	#define AddStaticVehicle Spec_AddStaticVehicle
+
+	stock Spec_AddStaticVehicleEx(modelid, Float:spawn_x, Float:spawn_y, Float:spawn_z, Float:z_angle, color1, color2, respawn_delay)
+	{
+ 		new ret = AddStaticVehicleEx(modelid, spawn_x, spawn_y, spawn_z, z_angle, color1, color2, respawn_delay);
+	    Iter_Add(Vehicle, ret);
+     	return ret;
+	}
+	#if defined _ALS_AddStaticVehicleEx
+ 		#undef AddStaticVehicleEx
+	#else
+	    #define _ALS_AddStaticVehicleEx
+	#endif
+	#define AddStaticVehicleEx Spec_AddStaticVehicleEx
+
+	stock Spec_DestroyVehicle(vehicleid)
+	{
+ 		Iter_Remove(Vehicle, vehicleid);
+   		return DestroyVehicle(vehicleid);
+	}
+	#if defined _ALS_DestroyVehicle
+ 		#undef DestroyVehicle
+	#else
+ 		#define _ALS_DestroyVehicle
+	#endif
+	#define DestroyVehicle Spec_DestroyVehicle
+#endif
+
+#define SPECTATE_TYPE_NONE (0)
+#define SPECTATE_TYPE_PLAYER (1)
+#define SPECTATE_TYPE_VEHICLE (2)
+#define SPECTATE_TYPE_FREE (3)
+
+enum e_SPECTATE_DATA
+{
+	Spec_Id,
+	Spec_Type,
+	Spec_Mode
+};
+static pSpecData[MAX_PLAYERS][e_SPECTATE_DATA];
+static pSpecWorldid[MAX_PLAYERS];
+
+stock Spec_PlayerSpectatePlayer(playerid, targetplayerid, mode = SPECTATE_MODE_NORMAL)
+{
+	if (PlayerSpectatePlayer(playerid, targetplayerid, mode))
+	{
+	    pSpecData[playerid][Spec_Id] = targetplayerid;
+	    pSpecData[playerid][Spec_Type] = SPECTATE_TYPE_PLAYER;
+	    pSpecData[playerid][Spec_Mode] = mode;
+	  
+		SetPlayerInterior(playerid, GetPlayerInterior(targetplayerid));
+		SetPlayerVirtualWorld(playerid, GetPlayerVirtualWorld(targetplayerid));
+
+		if (IsPlayerInAnyVehicle(targetplayerid))
+		{
+  			PlayerSpectateVehicle(playerid, GetPlayerVehicleID(targetplayerid), mode);
+		}
+		
+		return true;
+	}
+	
 	return false;
 }
+#if defined _ALS_PlayerSpectatePlayer
+    #undef PlayerSpectatePlayer
+#else
+    #define _ALS_PlayerSpectatePlayer
+#endif
+#define PlayerSpectatePlayer Spec_PlayerSpectatePlayer
 
-stock SPEC_PlayerSpectateVehicle(playerid, targetvehicleid, mode = SPECTATE_MODE_NORMAL)
+stock Spec_PlayerSpectateVehicle(playerid, targetvehicleid, mode = SPECTATE_MODE_NORMAL)
 {
 	if(PlayerSpectateVehicle(playerid, targetvehicleid, mode))
 	{
-	    gSpectate[playerid][SPEC_ID] = targetvehicleid;
-		gSpectate[playerid][SPEC_TYPE] = SPEC_TYPE_VEHICLE;
-  		gSpectate[playerid][SPEC_MODE] = mode;
+	    pSpecData[playerid][Spec_Id] = targetvehicleid;
+	    pSpecData[playerid][Spec_Type] = SPECTATE_TYPE_VEHICLE;
+	    pSpecData[playerid][Spec_Mode] = mode;
 
-		SetPlayerInterior(playerid, GetPlayerInterior(targetvehicleid));
-		SetPlayerVirtualWorld(playerid, GetPlayerVirtualWorld(targetvehicleid));
-
-		if(! IsPlayerSpectating(playerid))
-		{
-			CallLocalFunction("OnPlayerSpecUpdate", "iiiii", playerid, targetvehicleid, SPEC_UPDATE_START, SPEC_TYPE_VEHICLE, SPEC_TYPE_NONE);
-		}
-		if(GetPlayerSpectateType(playerid) != SPEC_TYPE_VEHICLE)
-		{
-			CallLocalFunction("OnPlayerSpecUpdate", "iiiii", playerid, targetvehicleid, SPEC_UPDATE_CHANGE, SPEC_TYPE_VEHICLE, GetPlayerSpectateType(playerid));
-		}
+		SetPlayerInterior(playerid, GetVehicleInterior(targetvehicleid));
+		SetPlayerVirtualWorld(playerid, GetVehicleVirtualWorld(targetvehicleid));
+		
 		return true;
 	}
+	
 	return false;
 }
+#if defined _ALS_PlayerSpectateVehicle
+    #undef PlayerSpectateVehicle
+#else
+    #define _ALS_PlayerSpectateVehicle
+#endif
+#define PlayerSpectateVehicle Spec_PlayerSpectateVehicle
 
-stock SPEC_TogglePlayerSpectating(playerid, bool:toggle)
+stock Spec_TogglePlayerSpectating(playerid, bool:toggle)
 {
-	if(TogglePlayerSpectating(playerid, toggle))
+	if (TogglePlayerSpectating(playerid, toggle))
 	{
-		CallLocalFunction("OnPlayerSpecUpdate", "iiiii", playerid, GetPlayerSpectateID(playerid), SPEC_UPDATE_STOP, gSpectate[playerid][SPEC_TYPE], SPEC_TYPE_NONE);
-
-	    gSpectate[playerid][SPEC_ID] = INVALID_PLAYER_ID;
-	    gSpectate[playerid][SPEC_TYPE] = SPEC_TYPE_NONE;
+	    pSpecData[playerid][Spec_Id] = INVALID_PLAYER_ID;
+	    pSpecData[playerid][Spec_Type] = SPECTATE_TYPE_FREE;
+	    pSpecData[playerid][Spec_Mode] = 0;
+	    
 		return true;
 	}
+	
 	return false;
 }
 #if defined _ALS_TogglePlayerSpectating
@@ -232,216 +160,142 @@ stock SPEC_TogglePlayerSpectating(playerid, bool:toggle)
 #else
     #define _ALS_TogglePlayerSpectating
 #endif
-#define TogglePlayerSpectating SPEC_TogglePlayerSpectating
+#define TogglePlayerSpectating Spec_TogglePlayerSpectating
 
-stock SetPlayerSpectateKeys(playerid, keytype, key)
+stock GetPlayerSpectateData(playerid, &spectatetype, &targetid, &mode)
 {
-	switch(keytype)
+	if (playerid < 0 || player > MAX_PLAYERS)
 	{
-		case SPEC_KEY_NEXT: gSpectate[playerid][SPEC_KEY_SET_NEXT] = key;
-		case SPEC_KEY_PREVIOUS: gSpectate[playerid][SPEC_KEY_SET_PREVIOUS] = key;
-		case SPEC_KEY_STOP: gSpectate[playerid][SPEC_KEY_SET_STOP] = key;
-		default: return false;
+	    return false;
 	}
-	return true;
+
+    spectatetype = pSpecData[playerid][Spec_Type];
+    targetid = pSpecData[playerid][Spec_Id];
+    mode = pSpecData[playerid][Spec_Mode];
+    
+    return true;
 }
 
-stock GetPlayerSpectateKeys(playerid, keytype)
+stock UpdatePlayerSpectate(playerid, bool:advance = true)
 {
-	switch(keytype)
+	switch (pSpecData[playerid][Spec_Type])
 	{
-		case SPEC_KEY_NEXT: return gSpectate[playerid][SPEC_KEY_SET_NEXT];
-		case SPEC_KEY_PREVIOUS: return gSpectate[playerid][SPEC_KEY_SET_PREVIOUS];
-		case SPEC_KEY_STOP: return gSpectate[playerid][SPEC_KEY_SET_STOP];
+	    case SPECTATE_TYPE_PLAYER:
+	    {
+			if (advance)
+			{
+   			Spec_NextPlayer:
+
+				new targetid = INVALID_PLAYER_ID;
+    			targetid = Iter_Next(Player, targetid);
+    			
+    			if (targetid == INVALID_PLAYER_ID)
+    			{
+    			    return INVALID_PLAYER_ID;
+    			}
+                else if (GetPlayerState(targetid) == PLAYER_STATE_SPECTATING || GetPlayerState(targetid) == PLAYER_STATE_WASTED)
+                {
+                	goto Spec_NextPlayer;
+                }
+                else
+                {
+                	PlayerSpectatePlayer(playerid, targetid, pSpecData[playerid][Spec_Mode]);
+       			}
+       			
+       			return targetid;
+			}
+			else
+			{
+			Spec_PreviousPlayer:
+
+				new targetid = INVALID_PLAYER_ID;
+                targetid = Iter_Prev(Player, targetid);
+                
+    			if (targetid == INVALID_PLAYER_ID)
+    			{
+    			    return INVALID_PLAYER_ID;
+    			}
+                else if (GetPlayerState(targetid) == PLAYER_STATE_SPECTATING || GetPlayerState(targetid) == PLAYER_STATE_WASTED)
+                {
+                	goto Spec_PreviousPlayer;
+                }
+                else
+                {
+                	PlayerSpectatePlayer(playerid, targetid, pSpecData[playerid][Spec_Mode]);
+			    }
+
+       			return targetid;
+			}
+		}
+		case SPECTATE_TYPE_VEHICLE:
+	    {
+			if (advance)
+			{
+   			Spec_NextVehicle:
+
+				new targetid = INVALID_VEHICLE_ID;
+    			targetid = Iter_Next(Vehicle, targetid);
+
+    			if (targetid == INVALID_VEHICLE_ID)
+    			{
+    			    return INVALID_VEHICLE_ID;
+    			}
+                else if (IsValidVehicle(targetid))
+                {
+                	goto Spec_NextVehicle;
+                }
+                else
+                {
+                	PlayerSpectateVehicle(playerid, targetid, pSpecData[playerid][Spec_Mode]);
+       			}
+
+       			return targetid;
+			}
+			else
+			{
+			Spec_PreviousVehicle:
+
+				new targetid = INVALID_VEHICLE_ID;
+                targetid = Iter_Prev(Vehicle, targetid);
+
+    			if (targetid == INVALID_VEHICLE_ID)
+    			{
+    			    return INVALID_VEHICLE_ID;
+    			}
+                else if (IsValidVehicle(targetid))
+                {
+                	goto Spec_PreviousVehicle;
+                }
+                else
+                {
+                	PlayerSpectateVehicle(playerid, targetid, pSpecData[playerid][Spec_Mode]);
+			    }
+
+       			return targetid;
+			}
+		}
 	}
+	
 	return -1;
-}
-
-#if ! defined IsPlayerSpectating
-	stock IsPlayerSpectating(playerid)
-	{
-		if(GetPlayerState(playerid) == PLAYER_STATE_SPECTATING) return true;
-		return false;
-	}
-#endif
-
-stock UpdatePlayerSpectate(playerid, bool:next = true)
-{
-	switch(GetPlayerSpectateMode(playerid))
-	{
-	    case SPEC_TYPE_PLAYER:
-	    {
-			if(next)
-			{
-			    SPEC_LOOP_PLAYERS_NEXT(i, (GetPlayerSpectateID(playerid) + 1))
-				{
-					if(	IsPlayerConnected(i) &&
-						! IsPlayerSpectating(i) &&
-						i != playerid)
-			    	{
-			   			CallLocalFunction("OnPlayerSpecUpdate", "iiiii", playerid, i, SPEC_UPDATE_NEXT, i, GetPlayerSpectateID(playerid));
-			    		SPEC_PlayerSpectatePlayer(playerid, i, GetPlayerSpectateMode(playerid));
-			    		return true;
-			    	}
-					else if(i < GetPlayerPoolSize())
-					{
-					    SPEC_LOOP_PLAYERS_PREV(p, (GetPlayerSpectateID(playerid) - 1))
-					    {
-					        if(	IsPlayerConnected(p) &&
-								! IsPlayerSpectating(p) &&
-								i != playerid)
-					        {
-				   				CallLocalFunction("OnPlayerSpecUpdate", "iiiii", playerid, p, SPEC_UPDATE_PREVIOUS, p, GetPlayerSpectateID(playerid));
-					            SPEC_PlayerSpectatePlayer(playerid, p, GetPlayerSpectateMode(playerid));
-					            return true;
-					        }
-					        if(p < 0)
-					        {
-					            return false;
-					        }
-					    }
-					}
-				}
-			}
-			else
-			{
-			    SPEC_LOOP_PLAYERS_PREV(p, (GetPlayerSpectateID(playerid) - 1))
-				{
-					if(	IsPlayerConnected(p) &&
-						! IsPlayerSpectating(p) &&
-						p != playerid)
-					{
-						CallLocalFunction("OnPlayerSpecUpdate", "iiiii", playerid, p, SPEC_UPDATE_PREVIOUS, p, GetPlayerSpectateID(playerid));
-		    			SPEC_PlayerSpectatePlayer(playerid, p, GetPlayerSpectateMode(playerid));
-		       			return true;
-					}
-					if(p < 0)
-					{
-		   				SPEC_LOOP_PLAYERS_NEXT(i, (GetPlayerSpectateID(playerid) + 1))
-						{
-							if(	IsPlayerConnected(i) &&
-								! IsPlayerSpectating(i) &&
-								i != playerid)
-					    	{
-					   			CallLocalFunction("OnPlayerSpecUpdate", "iiiii", playerid, i, SPEC_UPDATE_NEXT, i, GetPlayerSpectateID(playerid));
-					    		SPEC_PlayerSpectatePlayer(playerid, i, GetPlayerSpectateMode(playerid));
-					    		return true;
-					    	}
-					    	else if(i < GetPlayerPoolSize())
-					    	{
-					    	    return false;
-					    	}
-					    }
-		       		}
-			  	}
-			}
-		}
-		case SPEC_TYPE_VEHICLE:
-	    {
-			if(next)
-			{
-			    SPEC_LOOP_VEHICLES_NEXT(i, (GetPlayerSpectateID(playerid) + 1))
-				{
-					if(IsValidVehicle(i))
-			    	{
-			   			CallLocalFunction("OnPlayerSpecUpdate", "iiiii", playerid, i, SPEC_UPDATE_NEXT, i, GetPlayerSpectateID(playerid));
-			    		PlayerSpectateVehicle(playerid, i, GetPlayerSpectateMode(playerid));
-			    		return true;
-			    	}
-					else if(i < GetVehiclePoolSize())
-					{
-					    SPEC_LOOP_VEHICLES_PREV(p, (GetPlayerSpectateID(playerid) - 1))
-					    {
-					        if(IsValidVehicle(p))
-					        {
-				   				CallLocalFunction("OnPlayerSpecUpdate", "iiiii", playerid, p, SPEC_UPDATE_PREVIOUS, p, GetPlayerSpectateID(playerid));
-					            PlayerSpectateVehicle(playerid, p, GetPlayerSpectateMode(playerid));
-					            return true;
-					        }
-					        if(p < 0)
-					        {
-					            return false;
-					        }
-					    }
-					}
-				}
-			}
-			else
-			{
-			    SPEC_LOOP_VEHICLES_PREV(p, (GetPlayerSpectateID(playerid) - 1))
-				{
-					if(IsValidVehicle(p))
-					{
-						CallLocalFunction("OnPlayerSpecUpdate", "iiiii", playerid, p, SPEC_UPDATE_PREVIOUS, p, GetPlayerSpectateID(playerid));
-		    			PlayerSpectateVehicle(playerid, p, GetPlayerSpectateMode(playerid));
-		       			return true;
-					}
-					if(p < 0)
-					{
-		   				SPEC_LOOP_VEHICLES_NEXT(i, (GetPlayerSpectateID(playerid) + 1))
-						{
-							if(IsValidVehicle(i))
-					    	{
-					   			CallLocalFunction("OnPlayerSpecUpdate", "iiiii", playerid, i, SPEC_UPDATE_NEXT, i, GetPlayerSpectateID(playerid));
-					    		PlayerSpectateVehicle(playerid, i, GetPlayerSpectateMode(playerid));
-					    		return true;
-					    	}
-					    	else if(i < GetVehiclePoolSize())
-					    	{
-					    	    return false;
-					    	}
-					    }
-		       		}
-			  	}
-			}
-		}
-		default: return false;
-	}
-	return false;
-}
-
-stock SetPlayerSpectatePool(playerid, index, id)
-{
-    gSpectate[playerid][SPEC_POOL][index] = id;
-	return true;
-}
-
-stock GetPlayerSpectatePool(playerid, index)
-{
-    return gSpectate[playerid][SPEC_POOL][index];
-}
-
-stock ResetPlayerSpectatePool(playerid)
-{
-	for(new i; i < SPEC_MAX_POOL_SIZE; i++)
-	{
-		gSpectate[playerid][SPEC_POOL][i] = -1;
-	}
-	return true;
 }
 
 public OnVehicleDeath(vehicleid, killerid)
 {
-    new Float:fpos[3];
-	GetVehiclePos(vehicleid, fpos[0], fpos[1], fpos[2]);
+    new Float:pos[3];
+	GetVehiclePos(vehicleid, pos[0], pos[1], pos[2]);
+ 	pos[2] += 5.0;
 
-	SPEC_LOOP_PLAYERS(i)
+	foreach (new i : Player)
 	{
-		if(	IsPlayerConnected(i) &&
-			IsPlayerSpectating(i) &&
-			GetPlayerSpectateID(i) == vehicleid &&
-			GetPlayerSpectateMode(i) == SPEC_TYPE_VEHICLE)
- 		{
- 		    fpos[2] += 5.0;
-			SetPlayerCameraPos(i, fpos[0], fpos[1], fpos[2]);
-			SetPlayerCameraLookAt(i, fpos[0], fpos[1], fpos[2]);
-
-	        CallLocalFunction("OnPlayerSpecUpdate", "iiiii", i, vehicleid, SPEC_UPDATE_DEATH, killerid, -1);
+		if (pSpecData[i][Spec_Type] == SPECTATE_TYPE_VEHICLE && pSpecData[i][Spec_Id] == vehicleid)
+		{
+			SetPlayerCameraPos(i, pos[0], pos[1], pos[2]);
+			SetPlayerCameraLookAt(i, pos[0], pos[1], pos[2]);
 		}
-  	}
+ 	}
 
-	#if defined SPEC_OnVehicleDeath
-       	return SPEC_OnVehicleDeath(vehicleid, killerid);
+	#if defined Spec_OnVehicleDeath
+       	return Spec_OnVehicleDeath(vehicleid, killerid);
 	#else
 	   	return 1;
 	#endif
@@ -451,28 +305,23 @@ public OnVehicleDeath(vehicleid, killerid)
 #else
     #define _ALS_OnVehicleDeath
 #endif
-#define OnVehicleDeath SPEC_OnVehicleDeath
-#if defined SPEC_OnVehicleDeath
-    forward SPEC_OnVehicleDeath(vehicleid, killerid);
+#define OnVehicleDeath Spec_OnVehicleDeath
+#if defined Spec_OnVehicleDeath
+    forward Spec_OnVehicleDeath(vehicleid, killerid);
 #endif
 
 public OnVehicleSpawn(vehicleid)
 {
-	SPEC_LOOP_PLAYERS(i)
+	foreach (new i : Player)
 	{
-		if(	IsPlayerConnected(i) &&
-			IsPlayerSpectating(i) &&
-			GetPlayerSpectateID(i) == vehicleid &&
-			GetPlayerSpectateMode(i) == SPEC_TYPE_VEHICLE)
- 		{
-			SPEC_PlayerSpectateVehicle(i, vehicleid, GetPlayerSpectateMode(i));
-
-            CallLocalFunction("OnPlayerSpecUpdate", "iiiii", i, vehicleid, SPEC_UPDATE_SPAWN, -1, -1);
- 		}
+		if (pSpecData[i][Spec_Type] == SPECTATE_TYPE_VEHICLE && pSpecData[i][Spec_Id] == vehicleid)
+		{
+			PlayerSpectateVehicle(i, vehicleid, pSpecData[i][Spec_Mode]);
+		}
  	}
 
-	#if defined SPEC_OnVehicleSpawn
-       	return SPEC_OnVehicleSpawn(vehicleid);
+	#if defined Spec_OnVehicleSpawn
+       	return Spec_OnVehicleSpawn(vehicleid);
 	#else
 	   	return 1;
 	#endif
@@ -482,66 +331,37 @@ public OnVehicleSpawn(vehicleid)
 #else
     #define _ALS_OnVehicleSpawn
 #endif
-#define OnVehicleSpawn SPEC_OnVehicleSpawn
-#if defined SPEC_OnVehicleSpawn
-    forward SPEC_OnVehicleSpawn(vehicleid);
-#endif
-
-public OnPlayerConnect(playerid)
-{
-	gSpectate[playerid][SPEC_ID] = INVALID_PLAYER_ID;
-	gSpectate[playerid][SPEC_TYPE] = SPEC_TYPE_NONE;
-	gSpectate[playerid][SPEC_MODE] = -1;
-	#if ! defined OnPlayerVirtualWorldChange
-		gSpectate[playerid][SPEC_VIRTUAL_WORLD] = GetPlayerVirtualWorld(playerid);
-	#endif
-	ResetPlayerSpectatePool(playerid);
-	gSpectate[playerid][SPEC_KEY_SET_NEXT] = KEY_RIGHT;
-	gSpectate[playerid][SPEC_KEY_SET_PREVIOUS] = KEY_LEFT;
-	gSpectate[playerid][SPEC_KEY_SET_STOP] = KEY_SECONDARY_ATTACK;
-
-    #if defined SPEC_OnPlayerConnect
-       	return SPEC_OnPlayerConnect(playerid);
-	#else
-	   	return 1;
-	#endif
-}
-#if defined _ALS_OnPlayerConnect
-    #undef OnPlayerConnect
-#else
-    #define _ALS_OnPlayerConnect
-#endif
-#define OnPlayerConnect SPEC_OnPlayerConnect
-#if defined SPEC_OnPlayerConnect
-    forward SPEC_OnPlayerConnect(playerid);
+#define OnVehicleSpawn Spec_OnVehicleSpawn
+#if defined Spec_OnVehicleSpawn
+    forward Spec_OnVehicleSpawn(vehicleid);
 #endif
 
 public OnPlayerStateChange(playerid, newstate, oldstate)
 {
-	SPEC_LOOP_PLAYERS(i)
+	if (newstate == PLAYER_STATE_SPECTATING)
 	{
-		if(	IsPlayerConnected(i) &&
-			IsPlayerSpectating(i) &&
-			GetPlayerSpectateID(i) == playerid &&
-			GetPlayerSpectateMode(i) == SPEC_TYPE_PLAYER)
- 		{
-   			if(IsSpectateStateUpdateToggled(i))
-			{
-   				if(IsPlayerInAnyVehicle(playerid))
-				{
-					PlayerSpectateVehicle(i, GetPlayerVehicleID(playerid), GetPlayerSpectateType(i));
-				}
-				else
-				{
-					SPEC_PlayerSpectatePlayer(i, playerid, GetPlayerSpectateType(i));
-				}
+		foreach (new i : Player)
+		{
+			if (i != playerid && pSpecData[i][Spec_Type] == SPECTATE_TYPE_PLAYER && pSpecData[i][Spec_Id] == playerid)
+	 		{
+                UpdatePlayerSpectate(i);
 			}
-	        CallLocalFunction("OnPlayerSpecUpdate", "iiiii", i, playerid, SPEC_UPDATE_STATE, newstate, oldstate);
-		}
+	  	}
+  	}
+	else if (((oldstate != PLAYER_STATE_DRIVER || oldstate != PLAYER_STATE_PASSENGER) && (newstate == PLAYER_STATE_DRIVER || newstate == PLAYER_STATE_PASSENGER)) ||
+			((oldstate != PLAYER_STATE_ONFOOT || oldstate != PLAYER_STATE_SPAWNED) && (newstate == PLAYER_STATE_ONFOOT || newstate == PLAYER_STATE_SPAWNED)))
+	{
+		foreach (new i : Player)
+		{
+			if (i != playerid && pSpecData[i][Spec_Type] == SPECTATE_TYPE_PLAYER && pSpecData[i][Spec_Id] == playerid)
+	 		{
+                PlayerSpectatePlayer(i, playerid, pSpecData[i][Spec_Mode]);
+			}
+	  	}
   	}
 
-	#if defined SPEC_OnPlayerStateChange
-       	return SPEC_OnPlayerStateChange(playerid, newstate, oldstate);
+	#if defined Spec_OnPlayerStateChange
+       	return Spec_OnPlayerStateChange(playerid, newstate, oldstate);
 	#else
 	   	return 1;
 	#endif
@@ -551,162 +371,29 @@ public OnPlayerStateChange(playerid, newstate, oldstate)
 #else
     #define _ALS_OnPlayerStateChange
 #endif
-#define OnPlayerStateChange SPEC_OnPlayerStateChange
-#if defined SPEC_OnPlayerStateChange
-    forward SPEC_OnPlayerStateChange(playerid, newstate, oldstate);
-#endif
-
-public OnPlayerKeyStateChange(playerid, newkeys, oldkeys)
-{
-	if(GetPlayerSpectateType(playerid) == SPEC_TYPE_PLAYER)
-	{
-		if(GetPlayerSpectateKeys(playerid, SPEC_KEY_NEXT) != SPEC_KEY_INVALID)
-		{
-			if(	GetPlayerSpectateKeys(playerid, SPEC_KEY_NEXT) != KEY_UP &&
-				GetPlayerSpectateKeys(playerid, SPEC_KEY_NEXT) != KEY_DOWN &&
-				GetPlayerSpectateKeys(playerid, SPEC_KEY_NEXT) != KEY_LEFT &&
-				GetPlayerSpectateKeys(playerid, SPEC_KEY_NEXT) != KEY_RIGHT)
-			{
-			    if(newkeys == GetPlayerSpectateKeys(playerid, SPEC_KEY_NEXT))
-			    {
-			        UpdatePlayerSpectate(playerid, true);
-			    }
-			}
-		}
-
-		if(GetPlayerSpectateKeys(playerid, SPEC_KEY_PREVIOUS) != SPEC_KEY_INVALID)
-		{
-			if(	GetPlayerSpectateKeys(playerid, SPEC_KEY_PREVIOUS) != KEY_UP &&
-				GetPlayerSpectateKeys(playerid, SPEC_KEY_PREVIOUS) != KEY_DOWN &&
-				GetPlayerSpectateKeys(playerid, SPEC_KEY_PREVIOUS) != KEY_LEFT &&
-				GetPlayerSpectateKeys(playerid, SPEC_KEY_PREVIOUS) != KEY_RIGHT)
-			{
-			    if(newkeys == GetPlayerSpectateKeys(playerid, SPEC_KEY_NEXT))
-			    {
-			        UpdatePlayerSpectate(playerid, false);
-			    }
-			}
-		}
-
-		if(GetPlayerSpectateKeys(playerid, SPEC_KEY_STOP) != SPEC_KEY_INVALID)
-		{
-			if(	GetPlayerSpectateKeys(playerid, SPEC_KEY_STOP) != KEY_UP &&
-				GetPlayerSpectateKeys(playerid, SPEC_KEY_STOP) != KEY_DOWN &&
-				GetPlayerSpectateKeys(playerid, SPEC_KEY_STOP) != KEY_LEFT &&
-				GetPlayerSpectateKeys(playerid, SPEC_KEY_STOP) != KEY_RIGHT)
-			{
-			    if(newkeys == GetPlayerSpectateKeys(playerid, SPEC_KEY_STOP))
-			    {
-			        TogglePlayerSpectating(playerid, false);
-			    }
-			}
-		}
-	}
-
-	#if defined SPEC_OnPlayerKeyStateChange
-       	return SPEC_OnPlayerKeyStateChange(playerid, newkeys, oldkeys);
-	#else
-	   	return 1;
-	#endif
-}
-#if defined _ALS_OnPlayerKeyStateChange
-    #undef OnPlayerKeyStateChange
-#else
-    #define _ALS_OnPlayerKeyStateChange
-#endif
-#define OnPlayerKeyStateChange SPEC_OnPlayerKeyStateChange
-#if defined SPEC_OnPlayerKeyStateChange
-    forward SPEC_OnPlayerKeyStateChange(playerid, newkeys, oldkeys);
+#define OnPlayerStateChange Spec_OnPlayerStateChange
+#if defined Spec_OnPlayerStateChange
+    forward Spec_OnPlayerStateChange(playerid, newstate, oldstate);
 #endif
 
 public OnPlayerUpdate(playerid)
 {
-	if(GetPlayerSpectateType(playerid) == SPEC_TYPE_PLAYER)
+	new worldid = GetPlayerVirtualWorld(playerid);
+	if (pSpecWorldid[playerid] != worldid)
 	{
-		if(GetPlayerSpectateKeys(playerid, SPEC_KEY_NEXT) != SPEC_KEY_INVALID)
+ 		pSpecWorldid[playerid] = worldid;
+	        
+	    foreach (new i : Player)
 		{
-			if(GetPlayerSpectateKeys(playerid, SPEC_KEY_NEXT) == KEY_UP || GetPlayerSpectateKeys(playerid, SPEC_KEY_NEXT) == KEY_DOWN)
-			{
-				new keys, updown, leftright;
-				GetPlayerKeys(playerid, keys, updown, leftright);
-
-				if(updown & GetPlayerSpectateKeys(playerid, SPEC_KEY_NEXT))
-				{
-					UpdatePlayerSpectate(playerid, true);
-				}
-			}
-			else if(GetPlayerSpectateKeys(playerid, SPEC_KEY_NEXT) == KEY_LEFT || GetPlayerSpectateKeys(playerid, SPEC_KEY_NEXT) == KEY_RIGHT)
-			{
-				new keys, updown, leftright;
-				GetPlayerKeys(playerid, keys, updown, leftright);
-
-				if(leftright & GetPlayerSpectateKeys(playerid, SPEC_KEY_NEXT))
-				{
-					UpdatePlayerSpectate(playerid, true);
-				}
-			}
-		}
-
-		if(GetPlayerSpectateKeys(playerid, SPEC_KEY_PREVIOUS) != SPEC_KEY_INVALID)
-		{
-			if(GetPlayerSpectateKeys(playerid, SPEC_KEY_PREVIOUS) == KEY_UP || GetPlayerSpectateKeys(playerid, SPEC_KEY_PREVIOUS) == KEY_DOWN)
-			{
-				new keys, updown, leftright;
-				GetPlayerKeys(playerid, keys, updown, leftright);
-
-				if(updown & GetPlayerSpectateKeys(playerid, SPEC_KEY_PREVIOUS))
-				{
-					UpdatePlayerSpectate(playerid, false);
-				}
-			}
-			else if(GetPlayerSpectateKeys(playerid, SPEC_KEY_PREVIOUS) == KEY_LEFT || GetPlayerSpectateKeys(playerid, SPEC_KEY_PREVIOUS) == KEY_RIGHT)
-			{
-				new keys, updown, leftright;
-				GetPlayerKeys(playerid, keys, updown, leftright);
-
-				if(leftright & GetPlayerSpectateKeys(playerid, SPEC_KEY_PREVIOUS))
-				{
-					UpdatePlayerSpectate(playerid, false);
-				}
-			}
-		}
-
-		if(GetPlayerSpectateKeys(playerid, SPEC_KEY_STOP) != SPEC_KEY_INVALID)
-		{
-			if(GetPlayerSpectateKeys(playerid, SPEC_KEY_STOP) == KEY_UP || GetPlayerSpectateKeys(playerid, SPEC_KEY_STOP) == KEY_DOWN)
-			{
-				new keys, updown, leftright;
-				GetPlayerKeys(playerid, keys, updown, leftright);
-
-				if(updown & GetPlayerSpectateKeys(playerid, SPEC_KEY_STOP))
-				{
-					TogglePlayerSpectating(playerid, false);
-				}
-			}
-			else if(GetPlayerSpectateKeys(playerid, SPEC_KEY_STOP) == KEY_LEFT || GetPlayerSpectateKeys(playerid, SPEC_KEY_STOP) == KEY_RIGHT)
-			{
-				new keys, updown, leftright;
-				GetPlayerKeys(playerid, keys, updown, leftright);
-
-				if(leftright & GetPlayerSpectateKeys(playerid, SPEC_KEY_STOP))
-				{
-					TogglePlayerSpectating(playerid, false);
-				}
-			}
-		}
+			if (i != playerid && pSpecData[i][Spec_Type] == SPECTATE_TYPE_PLAYER && pSpecData[i][Spec_Id] == playerid)
+ 			{
+	            SetPlayerVirtualWorld(i, worldid);
+		  	}
+	    }
 	}
 
-	#if ! defined OnPlayerVirtualWorldChange
-	    new worldid = GetPlayerVirtualWorld(playerid);
-	    if(gSpectate[playerid][SPEC_VIRTUAL_WORLD] != worldid)
-	    {
-	        CallLocalFunction("SPEC_OnPlayerWorldChange", "iii", playerid, worldid, gSpectate[playerid][SPEC_VIRTUAL_WORLD]);
-	        gSpectate[playerid][SPEC_VIRTUAL_WORLD] = worldid;
-	    }
-	#endif
-
- 	#if defined SPEC_OnPlayerUpdate
- 		return SPEC_OnPlayerUpdate(playerid);
+ 	#if defined Spec_OnPlayerUpdate
+ 		return Spec_OnPlayerUpdate(playerid);
 	#else
 		return 1;
 	#endif
@@ -716,27 +403,23 @@ public OnPlayerUpdate(playerid)
 #else
     #define _ALS_OnPlayerUpdate
 #endif
-#define OnPlayerUpdate SPEC_OnPlayerUpdate
-#if defined SPEC_OnPlayerUpdate
-    forward SPEC_OnPlayerUpdate(playerid);
+#define OnPlayerUpdate Spec_OnPlayerUpdate
+#if defined Spec_OnPlayerUpdate
+    forward Spec_OnPlayerUpdate(playerid);
 #endif
 
 public OnPlayerSpawn(playerid)
 {
-	SPEC_LOOP_PLAYERS(i)
+	foreach (new i : Player)
 	{
-        if(	IsPlayerConnected(i) &&
-			GetPlayerSpectateID(i) == playerid &&
-			GetPlayerSpectateMode(i) == SPEC_TYPE_PLAYER)
+		if (i != playerid && pSpecData[i][Spec_Type] == SPECTATE_TYPE_PLAYER && pSpecData[i][Spec_Id] == playerid)
 		{
-			SPEC_PlayerSpectatePlayer(i, playerid, GetPlayerSpectateMode(i));
+			PlayerSpectateVehicle(i, playerid, pSpecData[i][Spec_Mode]);
+		}
+ 	}
 
-            CallLocalFunction("OnPlayerSpecUpdate", "iiiii", i, playerid, SPEC_UPDATE_SPAWN, -1, -1);
-        }
-    }
-
- 	#if defined SPEC_OnPlayerSpawn
- 		return SPEC_OnPlayerSpawn(playerid);
+ 	#if defined Spec_OnPlayerSpawn
+ 		return Spec_OnPlayerSpawn(playerid);
 	#else
 		return 1;
 	#endif
@@ -746,77 +429,23 @@ public OnPlayerSpawn(playerid)
 #else
     #define _ALS_OnPlayerSpawn
 #endif
-#define OnPlayerSpawn SPEC_OnPlayerSpawn
-#if defined SPEC_OnPlayerSpawn
-    forward SPEC_OnPlayerSpawn(playerid);
-#endif
-
-#if ! defined OnPlayerVirtualWorldChange
-	forward SPEC_OnPlayerWorldChange(playerid, neworld, oldworld);
-	public SPEC_OnPlayerWorldChange(playerid, neworld, oldworld)
-	{
-	    SPEC_LOOP_PLAYERS(i)
-	 	{
-	        if(	IsPlayerConnected(i) &&
-				GetPlayerSpectateID(i) == playerid &&
-				GetPlayerSpectateMode(i) == SPEC_TYPE_PLAYER)
-	        {
-	            SetPlayerVirtualWorld(i, neworld);
-
-	            CallLocalFunction("OnPlayerSpecUpdate", "iiii", i, playerid, SPEC_UPDATE_WORLDID, neworld, oldworld);
-	        }
-	    }
-	    return 1;
-	}
-#else
-    public OnPlayerVirtualWorldChange(playeird, neworld, oldworld)
-	{
-	    new worldid = GetPlayerSpectateID(playerid);
-	    SPEC_LOOP_PLAYERS(i)
-	    {
-	        if(	IsPlayerConnected(i) &&
-				GetPlayerSpectateID(i) == playerid &&
-				GetPlayerSpectateMode(i) == SPEC_TYPE_PLAYER)
-	        {
-	            SetPlayerVirtualWorld(i, worldid);
-
-	            CallLocalFunction("OnPlayerSpecUpdate", "iiiii", i, playerid, SPEC_UPDATE_WORLDID, neworld, oldworld);
-	        }
-	    }
-
-	    #if defined SPEC_OnPlayerVirtualWorldChange
-	       	return SPEC_OnPlayerVirtualWorldChange(playeird, neworld, oldworld);
-		#else
-		   	return 1;
-		#endif
-	}
-	#if defined _ALS_OnPlayerVirtualWorldChange
-	    #undef OnPlayerVirtualWorldChange
-	#else
-	    #define _ALS_OnPlayerVirtualWorldChange
-	#endif
-	#define OnPlayerVirtualWorldChange SPEC_OnPlayerVirtualWorldChange
-	#if defined SPEC_OnPlayerVirtualWorldChange
-	    forward SPEC_OnPlayerVirtualWorldChange(playeird, neworld, oldworld);
-	#endif
+#define OnPlayerSpawn Spec_OnPlayerSpawn
+#if defined Spec_OnPlayerSpawn
+    forward Spec_OnPlayerSpawn(playerid);
 #endif
 
 public OnPlayerInteriorChange(playerid, newinteriorid, oldinteriorid)
 {
-	SPEC_LOOP_PLAYERS(i)
+	foreach (new i : Player)
 	{
-        if(	IsPlayerConnected(i) &&
-			GetPlayerSpectateID(i) == playerid &&
-			GetPlayerSpectateMode(i) == SPEC_TYPE_PLAYER)
-		{
-			SetPlayerVirtualWorld(i, newinteriorid);
+		if (i != playerid && pSpecData[i][Spec_Type] == SPECTATE_TYPE_PLAYER && pSpecData[i][Spec_Id] == playerid)
+ 		{
+	    	SetPlayerInterior(i, newinteriorid);
+		}
+  	}
 
-            CallLocalFunction("OnPlayerSpecUpdate", "iiiii", i, playerid, SPEC_UPDATE_INTERIORID, newinteriorid, oldinteriorid);
-        }
-    }
-
-	#if defined SPEC_OnPlayerInteriorChange
-	  	return SPEC_OnPlayerInteriorChange(playerid, newinteriorid, oldinteriorid);
+	#if defined Spec_OnPlayerInteriorChange
+	  	return Spec_OnPlayerInteriorChange(playerid, newinteriorid, oldinteriorid);
 	#else
 	   	return 1;
 	#endif
@@ -826,9 +455,9 @@ public OnPlayerInteriorChange(playerid, newinteriorid, oldinteriorid)
 #else
     #define _ALS_OnPlayerInteriorChange
 #endif
-#define OnPlayerInteriorChange SPEC_OnPlayerInteriorChange
-#if defined SPEC_OnPlayerInteriorChange
-    forward SPEC_OnPlayerInteriorChange(playerid, newinteriorid, oldinteriorid);
+#define OnPlayerInteriorChange Spec_OnPlayerInteriorChange
+#if defined Spec_OnPlayerInteriorChange
+    forward Spec_OnPlayerInteriorChange(playerid, newinteriorid, oldinteriorid);
 #endif
 
 public OnPlayerDeath(playerid, killerid, reason)
@@ -839,25 +468,26 @@ public OnPlayerDeath(playerid, killerid, reason)
 	new Float:fpos[3];
 	GetPlayerPos(playerid, fpos[0], fpos[1], fpos[2]);
 
-	SPEC_LOOP_PLAYERS(i)
+	if (! GetPlayerInterior(playerid))
 	{
-        if(	IsPlayerConnected(i) &&
-			GetPlayerSpectateID(i) == playerid &&
-			GetPlayerSpectateMode(i) == SPEC_TYPE_PLAYER)
+		cam[2] += 5.0;
+ 	}
+ 	else
+ 	{
+ 	    cam[2] += 0.5;
+ 	}
+ 	
+	foreach (new i : Player)
+	{
+		if (i != playerid && pSpecData[i][Spec_Type] == SPECTATE_TYPE_PLAYER && pSpecData[i][Spec_Id] == playerid)
 		{
-			if(! GetPlayerInterior(i))
-			{
-				cam[2] += 5.0;
-		  	}
 			SetPlayerCameraPos(i, cam[0], cam[1], cam[2]);
 			SetPlayerCameraLookAt(i, fpos[0], fpos[1], fpos[2]);
+		}
+ 	}
 
-            CallLocalFunction("OnPlayerSpecUpdate", "iiiii", i, playerid, SPEC_UPDATE_DEATH, killerid, reason);
-        }
-    }
-
-	#if defined SPEC_OnPlayerDeath
-	  	return SPEC_OnPlayerDeath(playerid, killerid, reason);
+	#if defined Spec_OnPlayerDeath
+	  	return Spec_OnPlayerDeath(playerid, killerid, reason);
 	#else
 	   	return 1;
 	#endif
@@ -867,38 +497,23 @@ public OnPlayerDeath(playerid, killerid, reason)
 #else
     #define _ALS_OnPlayerDeath
 #endif
-#define OnPlayerDeath SPEC_OnPlayerDeath
-#if defined SPEC_OnPlayerDeath
-    forward SPEC_OnPlayerDeath(playerid, killerid, reason);
+#define OnPlayerDeath Spec_OnPlayerDeath
+#if defined Spec_OnPlayerDeath
+    forward Spec_OnPlayerDeath(playerid, killerid, reason);
 #endif
 
 public OnPlayerDisconnect(playerid, reason)
 {
-	new Float:cam[3];
-	GetPlayerCameraPos(playerid, cam[0], cam[1], cam[2]);
-
-	new Float:fpos[3];
-	GetPlayerPos(playerid, fpos[0], fpos[1], fpos[2]);
-
-	SPEC_LOOP_PLAYERS(i)
+	foreach (new i : Player)
 	{
-        if(	IsPlayerConnected(i) &&
-			GetPlayerSpectateID(i) == playerid &&
-			GetPlayerSpectateMode(i) == SPEC_TYPE_PLAYER)
+		if (i != playerid && pSpecData[i][Spec_Type] == SPECTATE_TYPE_PLAYER && pSpecData[i][Spec_Id] == playerid)
 		{
-			if(! GetPlayerInterior(i))
-			{
-				cam[2] += 5.0;
-		  	}
-			SetPlayerCameraPos(i, cam[0], cam[1], cam[2]);
-			SetPlayerCameraLookAt(i, fpos[0], fpos[1], fpos[2]);
+			UpdatePlayerSpectate(i);
+		}
+ 	}
 
-            CallLocalFunction("OnPlayerSpecUpdate", "iiiii", i, playerid, SPEC_UPDATE_DISCONNECT, reason, -1);
-        }
-    }
-
-	#if defined SPEC_OnPlayerDisconnect
-	  	return SPEC_OnPlayerDisconnect(playerid, reason);
+	#if defined Spec_OnPlayerDisconnect
+	  	return Spec_OnPlayerDisconnect(playerid, reason);
 	#else
 	   	return 1;
 	#endif
@@ -908,33 +523,7 @@ public OnPlayerDisconnect(playerid, reason)
 #else
     #define _ALS_OnPlayerDisconnect
 #endif
-#define OnPlayerDisconnect SPEC_OnPlayerDisconnect
-#if defined SPEC_OnPlayerDisconnect
-    forward SPEC_OnPlayerDisconnect(playerid, reason);
+#define OnPlayerDisconnect Spec_OnPlayerDisconnect
+#if defined Spec_OnPlayerDisconnect
+    forward Spec_OnPlayerDisconnect(playerid, reason);
 #endif
-
-forward OnPlayerSpecUpdate(playerid, targetplayerid, updatetype, newvalue, oldvalue);
-
-//Hook PlayerSpectatePlayer
-#if defined _ALS_PlayerSpectatePlayer
-    #undef PlayerSpectatePlayer
-#else
-    #define _ALS_PlayerSpectatePlayer
-#endif
-#define PlayerSpectatePlayer SPEC_PlayerSpectatePlayer
-//
-
-//Hook PlayerSpectateVehicle
-#if defined _ALS_PlayerSpectateVehicle
-    #undef PlayerSpectateVehicle
-#else
-    #define _ALS_PlayerSpectateVehicle
-#endif
-#define PlayerSpectateVehicle SPEC_PlayerSpectateVehicle
-//
-
-#undef SPEC_LOOP_PLAYERS
-#undef SPEC_LOOP_PLAYERS_NEXT
-#undef SPEC_LOOP_PLAYERS_PREV
-#undef SPEC_LOOP_VEHICLES_NEXT
-#undef SPEC_LOOP_VEHICLES_PREV
