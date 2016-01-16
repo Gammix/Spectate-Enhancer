@@ -1,11 +1,8 @@
-#include <a_samp>
-
 #if defined _spectate_included
 	#endinput
 #endif
 #define _spectate_included
 
-#include <SAMP_Fixer/fix_vehicles>
 #include <foreach>
 
 /*
@@ -18,12 +15,11 @@
 
 /*
 FUNCTIONS:
-native GetPlayerSpectateData(playerid, &spectatetype, &targetid, &mode);
-native UpdatePlayerSpectate(playerid, bool:advance = true);
+native
 */
 
 #if ! defined Vehicle
-	new Iterator:Vehicle<MAX_VEHICLES>;
+	static Iterator:Vehicle<MAX_VEHICLES>;
 
 	stock Spec_CreateVehicle(modelid, Float:spawn_x, Float:spawn_y, Float:spawn_z, Float:z_angle, color1, color2, respawn_delay)
 	{
@@ -77,6 +73,41 @@ native UpdatePlayerSpectate(playerid, bool:advance = true);
 	#define DestroyVehicle Spec_DestroyVehicle
 #endif
 
+#if ! defined GetVehicleInterior
+	static vInterior[MAX_VEHICLES];
+
+	stock Spec_LinkVehicleToInterior(vehicleid, interiorid)
+	{
+ 		vInterior[vehicleid];
+
+ 		return LinkVehicleToInterior(vehicleid, interiorid);
+	}
+	#if defined _ALS_LinkVehicleToInterior
+ 		#undef LinkVehicleToInterior
+	#else
+ 		#define _ALS_LinkVehicleToInterior
+	#endif
+	#define LinkVehicleToInterior Spec_LinkVehicleToInterior
+
+	stock GetVehicleInterior(vehicleid)
+	{
+ 		return vInterior[vehicleid];
+	}
+#endif
+
+#if ! defined IsValidVehicle
+	stock Spec_IsValidVehicle(vehicleid)
+	{
+ 		return (400 <= GetVehicleModel(vehicleid) <= 611) ? true : false;
+	}
+	#if defined _ALS_IsValidVehicle
+ 		#undef IsValidVehicle
+	#else
+ 		#define _ALS_IsValidVehicle
+	#endif
+	#define IsValidVehicle Spec_IsValidVehicle
+#endif
+
 #define SPECTATE_TYPE_NONE (0)
 #define SPECTATE_TYPE_PLAYER (1)
 #define SPECTATE_TYPE_VEHICLE (2)
@@ -98,7 +129,7 @@ stock Spec_PlayerSpectatePlayer(playerid, targetplayerid, mode = SPECTATE_MODE_N
 	    pSpecData[playerid][Spec_Id] = targetplayerid;
 	    pSpecData[playerid][Spec_Type] = SPECTATE_TYPE_PLAYER;
 	    pSpecData[playerid][Spec_Mode] = mode;
-	  
+
 		SetPlayerInterior(playerid, GetPlayerInterior(targetplayerid));
 		SetPlayerVirtualWorld(playerid, GetPlayerVirtualWorld(targetplayerid));
 
@@ -106,10 +137,10 @@ stock Spec_PlayerSpectatePlayer(playerid, targetplayerid, mode = SPECTATE_MODE_N
 		{
   			PlayerSpectateVehicle(playerid, GetPlayerVehicleID(targetplayerid), mode);
 		}
-		
+
 		return true;
 	}
-	
+
 	return false;
 }
 #if defined _ALS_PlayerSpectatePlayer
@@ -129,10 +160,10 @@ stock Spec_PlayerSpectateVehicle(playerid, targetvehicleid, mode = SPECTATE_MODE
 
 		SetPlayerInterior(playerid, GetVehicleInterior(targetvehicleid));
 		SetPlayerVirtualWorld(playerid, GetVehicleVirtualWorld(targetvehicleid));
-		
+
 		return true;
 	}
-	
+
 	return false;
 }
 #if defined _ALS_PlayerSpectateVehicle
@@ -149,10 +180,10 @@ stock Spec_TogglePlayerSpectating(playerid, bool:toggle)
 	    pSpecData[playerid][Spec_Id] = INVALID_PLAYER_ID;
 	    pSpecData[playerid][Spec_Type] = SPECTATE_TYPE_FREE;
 	    pSpecData[playerid][Spec_Mode] = 0;
-	    
+
 		return true;
 	}
-	
+
 	return false;
 }
 #if defined _ALS_TogglePlayerSpectating
@@ -172,7 +203,7 @@ stock GetPlayerSpectateData(playerid, &spectatetype, &targetid, &mode)
     spectatetype = pSpecData[playerid][Spec_Type];
     targetid = pSpecData[playerid][Spec_Id];
     mode = pSpecData[playerid][Spec_Mode];
-    
+
     return true;
 }
 
@@ -188,7 +219,7 @@ stock UpdatePlayerSpectate(playerid, bool:advance = true)
 
 				new targetid = INVALID_PLAYER_ID;
     			targetid = Iter_Next(Player, targetid);
-    			
+
     			if (targetid == INVALID_PLAYER_ID)
     			{
     			    return INVALID_PLAYER_ID;
@@ -201,7 +232,7 @@ stock UpdatePlayerSpectate(playerid, bool:advance = true)
                 {
                 	PlayerSpectatePlayer(playerid, targetid, pSpecData[playerid][Spec_Mode]);
        			}
-       			
+
        			return targetid;
 			}
 			else
@@ -210,7 +241,7 @@ stock UpdatePlayerSpectate(playerid, bool:advance = true)
 
 				new targetid = INVALID_PLAYER_ID;
                 targetid = Iter_Prev(Player, targetid);
-                
+
     			if (targetid == INVALID_PLAYER_ID)
     			{
     			    return INVALID_PLAYER_ID;
@@ -275,7 +306,7 @@ stock UpdatePlayerSpectate(playerid, bool:advance = true)
 			}
 		}
 	}
-	
+
 	return -1;
 }
 
@@ -382,7 +413,7 @@ public OnPlayerUpdate(playerid)
 	if (pSpecWorldid[playerid] != worldid)
 	{
  		pSpecWorldid[playerid] = worldid;
-	        
+
 	    foreach (new i : Player)
 		{
 			if (i != playerid && pSpecData[i][Spec_Type] == SPECTATE_TYPE_PLAYER && pSpecData[i][Spec_Id] == playerid)
@@ -476,7 +507,7 @@ public OnPlayerDeath(playerid, killerid, reason)
  	{
  	    cam[2] += 0.5;
  	}
- 	
+
 	foreach (new i : Player)
 	{
 		if (i != playerid && pSpecData[i][Spec_Type] == SPECTATE_TYPE_PLAYER && pSpecData[i][Spec_Id] == playerid)
