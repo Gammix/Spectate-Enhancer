@@ -3,83 +3,117 @@
 #endif
 #define _spectate_included
 
-#include <foreach>
-
 /*
-* [Include] Spectate enhancer (spectate.inc)
-* An advance spectate system include with camera freezer, crash free, bug free, auto redirecting, auto adjustments and supports callbacks.
-*
-* By Gammix - (c) Copyright 2015
-* This file is provided as is (no warranties).
-*/
+ * Spectate.inc
+ * Version: 2.0 (last updated on 24 July, 2016)
+ * By Gammix
+ *
+ * Functions:
+   native GetPlayerSpectateData(playerid, &spectatetype, &targetid, &mode);
+   native UpdatePlayerSpectate(playerid, bool:advance = true);
+ *
+ */
 
-/*
-FUNCTIONS:
-native
-*/
+static g_Players[MAX_PLAYERS];
+static g_PlayersCount;
 
-#if ! defined Vehicle
-	static Iterator:Vehicle<MAX_VEHICLES>;
+static g_Vehicles[MAX_VEHICLES];
+static g_VehiclesCount;
 
-	stock Spec_CreateVehicle(modelid, Float:spawn_x, Float:spawn_y, Float:spawn_z, Float:z_angle, color1, color2, respawn_delay)
-	{
- 		new ret = CreateVehicle(modelid, spawn_x, spawn_y, spawn_z, z_angle, color1, color2, respawn_delay);
-	    Iter_Add(Vehicle, ret);
-     	return ret;
-	}
-	#if defined _ALS_CreateVehicle
- 		#undef CreateVehicle
-	#else
- 		#define _ALS_CreateVehicle
-	#endif
-	#define CreateVehicle Spec_CreateVehicle
+#define SPECTATE_TYPE_NONE (0)
+#define SPECTATE_TYPE_PLAYER (1)
+#define SPECTATE_TYPE_VEHICLE (2)
+#define SPECTATE_TYPE_FREE (3)
 
-	stock Spec_AddStaticVehicle(modelid, Float:spawn_x, Float:spawn_y, Float:spawn_z, Float:z_angle, color1, color2)
-	{
- 		new ret = AddStaticVehicle(modelid, spawn_x, spawn_y, spawn_z, z_angle, color1, color2);
-	    Iter_Add(Vehicle, ret);
-     	return ret;
-	}
-	#if defined _ALS_AddStaticVehicle
- 		#undef AddStaticVehicle
-	#else
-	    #define _ALS_AddStaticVehicle
-	#endif
-	#define AddStaticVehicle Spec_AddStaticVehicle
+enum e_SPECTATE_DATA
+{
+	E_SPEC_DATA_ID,
+	E_SPEC_DATA_TYPE,
+	E_SPEC_DATA_MODE
+};
+static p_SpecData[MAX_PLAYERS][e_SPECTATE_DATA];
+static p_SpecWorldid[MAX_PLAYERS];
 
-	stock Spec_AddStaticVehicleEx(modelid, Float:spawn_x, Float:spawn_y, Float:spawn_z, Float:z_angle, color1, color2, respawn_delay)
-	{
- 		new ret = AddStaticVehicleEx(modelid, spawn_x, spawn_y, spawn_z, z_angle, color1, color2, respawn_delay);
-	    Iter_Add(Vehicle, ret);
-     	return ret;
-	}
-	#if defined _ALS_AddStaticVehicleEx
- 		#undef AddStaticVehicleEx
-	#else
-	    #define _ALS_AddStaticVehicleEx
-	#endif
-	#define AddStaticVehicleEx Spec_AddStaticVehicleEx
-
-	stock Spec_DestroyVehicle(vehicleid)
-	{
- 		Iter_Remove(Vehicle, vehicleid);
-   		return DestroyVehicle(vehicleid);
-	}
-	#if defined _ALS_DestroyVehicle
- 		#undef DestroyVehicle
-	#else
- 		#define _ALS_DestroyVehicle
-	#endif
-	#define DestroyVehicle Spec_DestroyVehicle
+stock Spec_CreateVehicle(modelid, Float:spawn_x, Float:spawn_y, Float:spawn_z, Float:z_angle, color1, color2, respawn_delay)
+{
+	new ret = CreateVehicle(modelid, spawn_x, spawn_y, spawn_z, z_angle, color1, color2, respawn_delay);
+	if (ret != INVALID_VEHICLE_ID)
+ 		g_Vehicles[g_VehiclesCount++] = ret;
+ 	return ret;
+}
+#if defined _ALS_CreateVehicle
+	#undef CreateVehicle
+#else
+	#define _ALS_CreateVehicle
 #endif
+#define CreateVehicle Spec_CreateVehicle
+
+stock Spec_AddStaticVehicle(modelid, Float:spawn_x, Float:spawn_y, Float:spawn_z, Float:z_angle, color1, color2)
+{
+ 	new ret = AddStaticVehicle(modelid, spawn_x, spawn_y, spawn_z, z_angle, color1, color2);
+	if (ret != INVALID_VEHICLE_ID)
+ 		g_Vehicles[g_VehiclesCount++] = ret;
+    return ret;
+}
+#if defined _ALS_AddStaticVehicle
+	#undef AddStaticVehicle
+#else
+    #define _ALS_AddStaticVehicle
+#endif
+#define AddStaticVehicle Spec_AddStaticVehicle
+
+stock Spec_AddStaticVehicleEx(modelid, Float:spawn_x, Float:spawn_y, Float:spawn_z, Float:z_angle, color1, color2, respawn_delay)
+{
+ 	new ret = AddStaticVehicleEx(modelid, spawn_x, spawn_y, spawn_z, z_angle, color1, color2, respawn_delay);
+	if (ret != INVALID_VEHICLE_ID)
+ 		g_Vehicles[g_VehiclesCount++] = ret;
+   	return ret;
+}
+#if defined _ALS_AddStaticVehicleEx
+ 	#undef AddStaticVehicleEx
+#else
+    #define _ALS_AddStaticVehicleEx
+#endif
+#define AddStaticVehicleEx Spec_AddStaticVehicleEx
+
+stock Spec_DestroyVehicle(vehicleid)
+{
+	new ret = DestroyVehicle(vehicleid);
+	if (ret)
+	{
+		new bool:shift;
+		for (new i; i < g_VehiclesCount; i++)
+		{
+		    if (!shift)
+		    {
+			    if (g_Vehicles[i] == vehicleid)
+			    {
+			        shift = true;
+			        continue;
+				}
+			}
+			else
+			{
+				g_Vehicles[i - 1] = g_Vehicles[i];
+			}
+		}
+		g_VehiclesCount--;
+	}
+	return ret;
+}
+#if defined _ALS_DestroyVehicle
+ 	#undef DestroyVehicle
+#else
+ 	#define _ALS_DestroyVehicle
+#endif
+#define DestroyVehicle Spec_DestroyVehicle
 
 #if ! defined GetVehicleInterior
-	static vInterior[MAX_VEHICLES];
+	static v_Interior[MAX_VEHICLES];
 
 	stock Spec_LinkVehicleToInterior(vehicleid, interiorid)
 	{
- 		vInterior[vehicleid];
-
+ 		v_Interior[vehicleid] = interiorid;
  		return LinkVehicleToInterior(vehicleid, interiorid);
 	}
 	#if defined _ALS_LinkVehicleToInterior
@@ -90,58 +124,37 @@ native
 	#define LinkVehicleToInterior Spec_LinkVehicleToInterior
 
 	stock GetVehicleInterior(vehicleid)
-	{
- 		return vInterior[vehicleid];
-	}
+		return v_Interior[vehicleid];
 #endif
 
 #if ! defined IsValidVehicle
-	stock Spec_IsValidVehicle(vehicleid)
-	{
- 		return (400 <= GetVehicleModel(vehicleid) <= 611) ? true : false;
-	}
-	#if defined _ALS_IsValidVehicle
- 		#undef IsValidVehicle
-	#else
- 		#define _ALS_IsValidVehicle
-	#endif
-	#define IsValidVehicle Spec_IsValidVehicle
+	native IsValidVehicle(vehicleid);
 #endif
-
-#define SPECTATE_TYPE_NONE (0)
-#define SPECTATE_TYPE_PLAYER (1)
-#define SPECTATE_TYPE_VEHICLE (2)
-#define SPECTATE_TYPE_FREE (3)
-
-enum e_SPECTATE_DATA
-{
-	Spec_Id,
-	Spec_Type,
-	Spec_Mode
-};
-static pSpecData[MAX_PLAYERS][e_SPECTATE_DATA];
-static pSpecWorldid[MAX_PLAYERS];
 
 stock Spec_PlayerSpectatePlayer(playerid, targetplayerid, mode = SPECTATE_MODE_NORMAL)
 {
-	if (PlayerSpectatePlayer(playerid, targetplayerid, mode))
-	{
-	    pSpecData[playerid][Spec_Id] = targetplayerid;
-	    pSpecData[playerid][Spec_Type] = SPECTATE_TYPE_PLAYER;
-	    pSpecData[playerid][Spec_Mode] = mode;
+	if (targetplayerid == playerid)
+	    return 0;
 
-		SetPlayerInterior(playerid, GetPlayerInterior(targetplayerid));
-		SetPlayerVirtualWorld(playerid, GetPlayerVirtualWorld(targetplayerid));
+	if (!IsPlayerConnected(playerid))
+	    return 0;
 
-		if (IsPlayerInAnyVehicle(targetplayerid))
-		{
-  			PlayerSpectateVehicle(playerid, GetPlayerVehicleID(targetplayerid), mode);
-		}
+	if (!IsPlayerConnected(targetplayerid))
+	    return 0;
+	    
+	p_SpecData[playerid][E_SPEC_DATA_ID] = targetplayerid;
+ 	p_SpecData[playerid][E_SPEC_DATA_TYPE] = SPECTATE_TYPE_PLAYER;
+  	p_SpecData[playerid][E_SPEC_DATA_MODE] = mode;
 
-		return true;
-	}
+	SetPlayerInterior(playerid, GetPlayerInterior(targetplayerid));
+	SetPlayerVirtualWorld(playerid, GetPlayerVirtualWorld(targetplayerid));
 
-	return false;
+	if (IsPlayerInAnyVehicle(targetplayerid))
+		PlayerSpectateVehicle(playerid, GetPlayerVehicleID(targetplayerid), mode);
+	else
+	    PlayerSpectatePlayer(playerid, targetplayerid, mode);
+
+	return 1;
 }
 #if defined _ALS_PlayerSpectatePlayer
     #undef PlayerSpectatePlayer
@@ -152,19 +165,20 @@ stock Spec_PlayerSpectatePlayer(playerid, targetplayerid, mode = SPECTATE_MODE_N
 
 stock Spec_PlayerSpectateVehicle(playerid, targetvehicleid, mode = SPECTATE_MODE_NORMAL)
 {
-	if(PlayerSpectateVehicle(playerid, targetvehicleid, mode))
-	{
-	    pSpecData[playerid][Spec_Id] = targetvehicleid;
-	    pSpecData[playerid][Spec_Type] = SPECTATE_TYPE_VEHICLE;
-	    pSpecData[playerid][Spec_Mode] = mode;
+	if (!IsPlayerConnected(playerid))
+	    return 0;
 
-		SetPlayerInterior(playerid, GetVehicleInterior(targetvehicleid));
-		SetPlayerVirtualWorld(playerid, GetVehicleVirtualWorld(targetvehicleid));
+	if (!IsValidVehicle(targetvehicleid))
+	    return 0;
+	    
+	p_SpecData[playerid][E_SPEC_DATA_ID] = targetvehicleid;
+ 	p_SpecData[playerid][E_SPEC_DATA_TYPE] = SPECTATE_TYPE_VEHICLE;
+ 	p_SpecData[playerid][E_SPEC_DATA_MODE] = mode;
 
-		return true;
-	}
+	SetPlayerInterior(playerid, GetVehicleInterior(targetvehicleid));
+	SetPlayerVirtualWorld(playerid, GetVehicleVirtualWorld(targetvehicleid));
 
-	return false;
+	return PlayerSpectateVehicle(playerid, targetvehicleid, mode);
 }
 #if defined _ALS_PlayerSpectateVehicle
     #undef PlayerSpectateVehicle
@@ -177,14 +191,13 @@ stock Spec_TogglePlayerSpectating(playerid, bool:toggle)
 {
 	if (TogglePlayerSpectating(playerid, toggle))
 	{
-	    pSpecData[playerid][Spec_Id] = INVALID_PLAYER_ID;
-	    pSpecData[playerid][Spec_Type] = SPECTATE_TYPE_FREE;
-	    pSpecData[playerid][Spec_Mode] = 0;
+	    p_SpecData[playerid][E_SPEC_DATA_ID] = INVALID_PLAYER_ID;
+	    p_SpecData[playerid][E_SPEC_DATA_TYPE] = SPECTATE_TYPE_FREE;
+	    p_SpecData[playerid][E_SPEC_DATA_MODE] = 0;
 
-		return true;
+		return 1;
 	}
-
-	return false;
+	return 0;
 }
 #if defined _ALS_TogglePlayerSpectating
     #undef TogglePlayerSpectating
@@ -196,112 +209,144 @@ stock Spec_TogglePlayerSpectating(playerid, bool:toggle)
 stock GetPlayerSpectateData(playerid, &spectatetype, &targetid, &mode)
 {
 	if (playerid < 0 || player > MAX_PLAYERS)
-	{
-	    return false;
-	}
+		return 0;
 
-    spectatetype = pSpecData[playerid][Spec_Type];
-    targetid = pSpecData[playerid][Spec_Id];
-    mode = pSpecData[playerid][Spec_Mode];
-
-    return true;
+    spectatetype = p_SpecData[playerid][E_SPEC_DATA_TYPE];
+    targetid = p_SpecData[playerid][E_SPEC_DATA_ID];
+    mode = p_SpecData[playerid][E_SPEC_DATA_MODE];
+    
+    return 1;
 }
 
 stock UpdatePlayerSpectate(playerid, bool:advance = true)
 {
-	switch (pSpecData[playerid][Spec_Type])
+	if (playerid < 0 || playerid > MAX_PLAYERS)
+		return -1;
+
+	switch (p_SpecData[playerid][E_SPEC_DATA_TYPE])
 	{
 	    case SPECTATE_TYPE_PLAYER:
 	    {
+	        if (g_PlayersCount < 2)
+	            return -1;
+	    
+			new targetid = -1;
+			
 			if (advance)
 			{
-   			Spec_NextPlayer:
-
-				new targetid = INVALID_PLAYER_ID;
-    			targetid = Iter_Next(Player, targetid);
-
-    			if (targetid == INVALID_PLAYER_ID)
-    			{
-    			    return INVALID_PLAYER_ID;
-    			}
-                else if (GetPlayerState(targetid) == PLAYER_STATE_SPECTATING || GetPlayerState(targetid) == PLAYER_STATE_WASTED)
+   			SPEC_NEXT_PLAYER:
+                for (new i = g_Players[0], j; j < g_PlayersCount; j++, i = g_Players[j])
                 {
-                	goto Spec_NextPlayer;
+                    if (i == p_SpecData[playerid][E_SPEC_DATA_ID])
+                    {
+                        if (i >= (g_PlayersCount - 1))
+                            goto SPEC_PERVIOUS_PLAYER;
+
+                        targetid = g_Players[++j];
+						break;
+                	}
                 }
+                
+                if (GetPlayerState(targetid) == PLAYER_STATE_SPECTATING || GetPlayerState(targetid) == PLAYER_STATE_WASTED)
+                	goto SPEC_NEXT_PLAYER;
                 else
                 {
-                	PlayerSpectatePlayer(playerid, targetid, pSpecData[playerid][Spec_Mode]);
-       			}
+                    p_SpecData[playerid][E_SPEC_DATA_ID] = targetid;
 
+					SetPlayerInterior(playerid, GetPlayerInterior(targetid));
+					SetPlayerVirtualWorld(playerid, GetPlayerVirtualWorld(targetid));
+
+					if (IsPlayerInAnyVehicle(targetid))
+						PlayerSpectateVehicle(playerid, GetPlayerVehicleID(targetid), p_SpecData[playerid][E_SPEC_DATA_MODE]);
+					else
+					    PlayerSpectatePlayer(playerid, targetid, p_SpecData[playerid][E_SPEC_DATA_MODE]);
+                }
        			return targetid;
 			}
 			else
 			{
-			Spec_PreviousPlayer:
-
-				new targetid = INVALID_PLAYER_ID;
-                targetid = Iter_Prev(Player, targetid);
-
-    			if (targetid == INVALID_PLAYER_ID)
-    			{
-    			    return INVALID_PLAYER_ID;
-    			}
-                else if (GetPlayerState(targetid) == PLAYER_STATE_SPECTATING || GetPlayerState(targetid) == PLAYER_STATE_WASTED)
+			SPEC_PERVIOUS_PLAYER:
+                for (new i = g_Players[0], j; j < g_PlayersCount; j++, i = g_Players[j])
                 {
-                	goto Spec_PreviousPlayer;
+                    if (i == p_SpecData[playerid][E_SPEC_DATA_ID])
+                    {
+                        if (i <= 0)
+                            goto SPEC_NEXT_PLAYER;
+
+                        targetid = g_Players[--j];
+						break;
+                	}
                 }
+
+                if (GetPlayerState(targetid) == PLAYER_STATE_SPECTATING || GetPlayerState(targetid) == PLAYER_STATE_WASTED)
+                	goto SPEC_NEXT_PLAYER;
                 else
                 {
-                	PlayerSpectatePlayer(playerid, targetid, pSpecData[playerid][Spec_Mode]);
-			    }
+                    p_SpecData[playerid][E_SPEC_DATA_ID] = targetid;
 
+					SetPlayerInterior(playerid, GetPlayerInterior(targetid));
+					SetPlayerVirtualWorld(playerid, GetPlayerVirtualWorld(targetid));
+
+					if (IsPlayerInAnyVehicle(targetid))
+						PlayerSpectateVehicle(playerid, GetPlayerVehicleID(targetid), p_SpecData[playerid][E_SPEC_DATA_MODE]);
+					else
+					    PlayerSpectatePlayer(playerid, targetid, p_SpecData[playerid][E_SPEC_DATA_MODE]);
+                }
        			return targetid;
 			}
 		}
+		
 		case SPECTATE_TYPE_VEHICLE:
 	    {
+	        if (g_VehiclesCount < 2)
+	            return -1;
+
+			new targetid = INVALID_PLAYER_ID;
+
 			if (advance)
 			{
-   			Spec_NextVehicle:
-
-				new targetid = INVALID_VEHICLE_ID;
-    			targetid = Iter_Next(Vehicle, targetid);
-
-    			if (targetid == INVALID_VEHICLE_ID)
-    			{
-    			    return INVALID_VEHICLE_ID;
-    			}
-                else if (IsValidVehicle(targetid))
+   			SPEC_NEXT_VEHICLE:
+                for (new i = g_Vehicles[0], j; j < g_VehiclesCount; j++, i = g_Vehicles[j])
                 {
-                	goto Spec_NextVehicle;
+                    if (i == p_SpecData[playerid][E_SPEC_DATA_ID])
+                    {
+                        if (i >= (g_VehiclesCount - 1))
+                            goto SPEC_PERVIOUS_VEHICLE;
+
+                        targetid = g_Vehicles[++j];
+						break;
+                	}
                 }
-                else
-                {
-                	PlayerSpectateVehicle(playerid, targetid, pSpecData[playerid][Spec_Mode]);
-       			}
 
+               	p_SpecData[playerid][E_SPEC_DATA_ID] = targetid;
+
+				SetPlayerInterior(playerid, GetVehicleInterior(targetid));
+				SetPlayerVirtualWorld(playerid, GetVehicleVirtualWorld(targetid));
+
+				PlayerSpectateVehicle(playerid, targetid, p_SpecData[playerid][E_SPEC_DATA_MODE]);
        			return targetid;
 			}
 			else
 			{
-			Spec_PreviousVehicle:
-
-				new targetid = INVALID_VEHICLE_ID;
-                targetid = Iter_Prev(Vehicle, targetid);
-
-    			if (targetid == INVALID_VEHICLE_ID)
-    			{
-    			    return INVALID_VEHICLE_ID;
-    			}
-                else if (IsValidVehicle(targetid))
+			SPEC_PERVIOUS_VEHICLE:
+                for (new i = g_Vehicles[0], j; j < g_VehiclesCount; j++, i = g_Vehicles[j])
                 {
-                	goto Spec_PreviousVehicle;
+                    if (i == p_SpecData[playerid][E_SPEC_DATA_ID])
+                    {
+                        if (i <= 0)
+                            goto SPEC_NEXT_VEHICLE;
+
+                        targetid = g_Vehicles[--j];
+						break;
+                	}
                 }
-                else
-                {
-                	PlayerSpectateVehicle(playerid, targetid, pSpecData[playerid][Spec_Mode]);
-			    }
 
+                p_SpecData[playerid][E_SPEC_DATA_ID] = targetid;
+
+				SetPlayerInterior(playerid, GetVehicleInterior(targetid));
+				SetPlayerVirtualWorld(playerid, GetVehicleVirtualWorld(targetid));
+
+				PlayerSpectateVehicle(playerid, targetid, p_SpecData[playerid][E_SPEC_DATA_MODE]);
        			return targetid;
 			}
 		}
@@ -316,9 +361,9 @@ public OnVehicleDeath(vehicleid, killerid)
 	GetVehiclePos(vehicleid, pos[0], pos[1], pos[2]);
  	pos[2] += 5.0;
 
-	foreach (new i : Player)
+	for (new i = g_Players[0], j; j < g_PlayersCount; j++, i = g_Players[j])
 	{
-		if (pSpecData[i][Spec_Type] == SPECTATE_TYPE_VEHICLE && pSpecData[i][Spec_Id] == vehicleid)
+		if (p_SpecData[i][E_SPEC_DATA_TYPE] == SPECTATE_TYPE_VEHICLE && p_SpecData[i][E_SPEC_DATA_ID] == vehicleid)
 		{
 			SetPlayerCameraPos(i, pos[0], pos[1], pos[2]);
 			SetPlayerCameraLookAt(i, pos[0], pos[1], pos[2]);
@@ -343,12 +388,10 @@ public OnVehicleDeath(vehicleid, killerid)
 
 public OnVehicleSpawn(vehicleid)
 {
-	foreach (new i : Player)
+	for (new i = g_Players[0], j; j < g_PlayersCount; j++, i = g_Players[j])
 	{
-		if (pSpecData[i][Spec_Type] == SPECTATE_TYPE_VEHICLE && pSpecData[i][Spec_Id] == vehicleid)
-		{
-			PlayerSpectateVehicle(i, vehicleid, pSpecData[i][Spec_Mode]);
-		}
+		if (p_SpecData[i][E_SPEC_DATA_TYPE] == SPECTATE_TYPE_VEHICLE && p_SpecData[i][E_SPEC_DATA_ID] == vehicleid)
+			PlayerSpectateVehicle(i, vehicleid, p_SpecData[i][E_SPEC_DATA_MODE]);
  	}
 
 	#if defined Spec_OnVehicleSpawn
@@ -371,23 +414,19 @@ public OnPlayerStateChange(playerid, newstate, oldstate)
 {
 	if (newstate == PLAYER_STATE_SPECTATING)
 	{
-		foreach (new i : Player)
+		for (new i = g_Players[0], j; j < g_PlayersCount; j++, i = g_Players[j])
 		{
-			if (i != playerid && pSpecData[i][Spec_Type] == SPECTATE_TYPE_PLAYER && pSpecData[i][Spec_Id] == playerid)
-	 		{
-                UpdatePlayerSpectate(i);
-			}
+			if (i != playerid && p_SpecData[i][E_SPEC_DATA_TYPE] == SPECTATE_TYPE_PLAYER && p_SpecData[i][E_SPEC_DATA_ID] == playerid)
+	 			UpdatePlayerSpectate(i);
 	  	}
   	}
 	else if (((oldstate != PLAYER_STATE_DRIVER || oldstate != PLAYER_STATE_PASSENGER) && (newstate == PLAYER_STATE_DRIVER || newstate == PLAYER_STATE_PASSENGER)) ||
 			((oldstate != PLAYER_STATE_ONFOOT || oldstate != PLAYER_STATE_SPAWNED) && (newstate == PLAYER_STATE_ONFOOT || newstate == PLAYER_STATE_SPAWNED)))
 	{
-		foreach (new i : Player)
+		for (new i = g_Players[0], j; j < g_PlayersCount; j++, i = g_Players[j])
 		{
-			if (i != playerid && pSpecData[i][Spec_Type] == SPECTATE_TYPE_PLAYER && pSpecData[i][Spec_Id] == playerid)
-	 		{
-                PlayerSpectatePlayer(i, playerid, pSpecData[i][Spec_Mode]);
-			}
+			if (i != playerid && p_SpecData[i][E_SPEC_DATA_TYPE] == SPECTATE_TYPE_PLAYER && p_SpecData[i][E_SPEC_DATA_ID] == playerid)
+	 			PlayerSpectatePlayer(i, playerid, p_SpecData[i][E_SPEC_DATA_MODE]);
 	  	}
   	}
 
@@ -410,16 +449,14 @@ public OnPlayerStateChange(playerid, newstate, oldstate)
 public OnPlayerUpdate(playerid)
 {
 	new worldid = GetPlayerVirtualWorld(playerid);
-	if (pSpecWorldid[playerid] != worldid)
+	if (p_SpecWorldid[playerid] != worldid)
 	{
- 		pSpecWorldid[playerid] = worldid;
+ 		p_SpecWorldid[playerid] = worldid;
 
-	    foreach (new i : Player)
+	    for (new i = g_Players[0], j; j < g_PlayersCount; j++, i = g_Players[j])
 		{
-			if (i != playerid && pSpecData[i][Spec_Type] == SPECTATE_TYPE_PLAYER && pSpecData[i][Spec_Id] == playerid)
- 			{
-	            SetPlayerVirtualWorld(i, worldid);
-		  	}
+			if (i != playerid && p_SpecData[i][E_SPEC_DATA_TYPE] == SPECTATE_TYPE_PLAYER && p_SpecData[i][E_SPEC_DATA_ID] == playerid)
+ 				SetPlayerVirtualWorld(i, worldid);
 	    }
 	}
 
@@ -441,12 +478,10 @@ public OnPlayerUpdate(playerid)
 
 public OnPlayerSpawn(playerid)
 {
-	foreach (new i : Player)
+	for (new i = g_Players[0], j; j < g_PlayersCount; j++, i = g_Players[j])
 	{
-		if (i != playerid && pSpecData[i][Spec_Type] == SPECTATE_TYPE_PLAYER && pSpecData[i][Spec_Id] == playerid)
-		{
-			PlayerSpectateVehicle(i, playerid, pSpecData[i][Spec_Mode]);
-		}
+		if (i != playerid && p_SpecData[i][E_SPEC_DATA_TYPE] == SPECTATE_TYPE_PLAYER && p_SpecData[i][E_SPEC_DATA_ID] == playerid)
+			PlayerSpectatePlayer(i, playerid, p_SpecData[i][E_SPEC_DATA_MODE]);
  	}
 
  	#if defined Spec_OnPlayerSpawn
@@ -467,12 +502,10 @@ public OnPlayerSpawn(playerid)
 
 public OnPlayerInteriorChange(playerid, newinteriorid, oldinteriorid)
 {
-	foreach (new i : Player)
+	for (new i = g_Players[0], j; j < g_PlayersCount; j++, i = g_Players[j])
 	{
-		if (i != playerid && pSpecData[i][Spec_Type] == SPECTATE_TYPE_PLAYER && pSpecData[i][Spec_Id] == playerid)
- 		{
-	    	SetPlayerInterior(i, newinteriorid);
-		}
+		if (i != playerid && p_SpecData[i][E_SPEC_DATA_TYPE] == SPECTATE_TYPE_PLAYER && p_SpecData[i][E_SPEC_DATA_ID] == playerid)
+ 			SetPlayerInterior(i, newinteriorid);
   	}
 
 	#if defined Spec_OnPlayerInteriorChange
@@ -508,9 +541,9 @@ public OnPlayerDeath(playerid, killerid, reason)
  	    cam[2] += 0.5;
  	}
 
-	foreach (new i : Player)
+	for (new i = g_Players[0], j; j < g_PlayersCount; j++, i = g_Players[j])
 	{
-		if (i != playerid && pSpecData[i][Spec_Type] == SPECTATE_TYPE_PLAYER && pSpecData[i][Spec_Id] == playerid)
+		if (i != playerid && p_SpecData[i][E_SPEC_DATA_TYPE] == SPECTATE_TYPE_PLAYER && p_SpecData[i][E_SPEC_DATA_ID] == playerid)
 		{
 			SetPlayerCameraPos(i, cam[0], cam[1], cam[2]);
 			SetPlayerCameraLookAt(i, fpos[0], fpos[1], fpos[2]);
@@ -533,14 +566,50 @@ public OnPlayerDeath(playerid, killerid, reason)
     forward Spec_OnPlayerDeath(playerid, killerid, reason);
 #endif
 
+public OnPlayerConnect(playerid)
+{
+    g_Players[g_PlayersCount++] = playerid;
+    
+	#if defined Spec_OnPlayerConnect
+	  	return Spec_OnPlayerConnect(playerid);
+	#else
+	   	return 1;
+	#endif
+}
+#if defined _ALS_OnPlayerConnect
+    #undef OnPlayerConnect
+#else
+    #define _ALS_OnPlayerConnect
+#endif
+#define OnPlayerConnect Spec_OnPlayerConnect
+#if defined Spec_OnPlayerConnect
+    forward Spec_OnPlayerConnect(playerid);
+#endif
+
 public OnPlayerDisconnect(playerid, reason)
 {
-	foreach (new i : Player)
+	new bool:shift;
+	for (new i; i < g_PlayersCount; i++)
 	{
-		if (i != playerid && pSpecData[i][Spec_Type] == SPECTATE_TYPE_PLAYER && pSpecData[i][Spec_Id] == playerid)
-		{
-			UpdatePlayerSpectate(i);
+	    if (!shift)
+	    {
+		    if (i == playerid)
+		    {
+		        shift = true;
+		        continue;
+			}
 		}
+		else
+		{
+			g_Players[i - 1] = g_Players[i];
+		}
+	}
+	g_PlayersCount--;
+    
+	for (new i = g_Players[0], j; j < g_PlayersCount; j++, i = g_Players[j])
+	{
+		if (i != playerid && p_SpecData[i][E_SPEC_DATA_TYPE] == SPECTATE_TYPE_PLAYER && p_SpecData[i][E_SPEC_DATA_ID] == playerid)
+			UpdatePlayerSpectate(i);
  	}
 
 	#if defined Spec_OnPlayerDisconnect
